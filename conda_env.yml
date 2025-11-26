@@ -1,0 +1,9 @@
+name: 404-cli
+channels:
+  - defaults
+
+dependencies:
+  - python=3.13
+  - pip
+  - pip:
+      - -r requirements.txt
