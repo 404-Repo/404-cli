@@ -45,6 +45,8 @@ def commit(repo: str, revision: str, coldkey: str, hotkey: str):
     wallet_hotkey = hotkey or settings.wallet_hotkey
     wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
 
+    logger.info(f"Committing {repo}@{revision} with wallet {wallet_name}@{wallet_hotkey}")
+
     async def _commit():
         sub = await get_subtensor()
         data = json.dumps({"model": repo, "revision": revision})

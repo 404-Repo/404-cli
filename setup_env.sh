@@ -16,21 +16,17 @@ source "${CONDA_BASE}/etc/profile.d/conda.sh"
 
 # Create conda environment and activate it
 conda env create -f conda_env.yml
-conda activate three-gen-discord-bot
+conda activate 404-cli
 conda info --env
-
-CUDA_HOME=${CONDA_PREFIX}
-# TODO: add to the requirements.txt later and not build from sources
-pip install git+https://github.com/nerfstudio-project/gsplat.git@v1.4.0
 
 # Store the path of the Conda interpreter
 CONDA_INTERPRETER_PATH=$(which python)
 
 # Generate the validation.config.js file for PM2 with specified configurations
-cat <<EOF > discord-bot.config.js
+cat <<EOF > 404-cli.config.js
 module.exports = {
   apps : [{
-    name: 'discord-bot',
+    name: '404-cli',
     script: 'main.py',
     interpreter: '${CONDA_INTERPRETER_PATH}',
   }]
