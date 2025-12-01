@@ -13,6 +13,7 @@ class MetadataError(Exception):
     pass
 
 
+
 @click.group()
 @click.option(
     "-v",
@@ -34,22 +35,63 @@ def cli(verbose):
     logger.add(sys.stderr, level=level)
 
 
-@cli.command("commit")
-@click.option("--repo", required=True, help="HF repo id (e.g. <user>/<repo>)")
-@click.option("--revision", required=True, help="HF commit SHA")
+@cli.command("commit-hash")
+@click.option("--hash", required=True, help="HF commit SHA")
 @click.option("--coldkey", default=None, help="Name of the cold wallet to use.")
 @click.option("--hotkey", default=None, help="Name of the hot wallet to use.")
-def commit(repo: str, revision: str, coldkey: str, hotkey: str):
+def commit_hash(hash: str, coldkey: str, hotkey: str):
     """Commit repo+revision on-chain (separate from deployment)."""
     wallet_name = coldkey or settings.wallet_name
     wallet_hotkey = hotkey or settings.wallet_hotkey
     wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
 
-    logger.info(f"Committing {repo}@{revision} with wallet {wallet_name}@{wallet_hotkey}")
+    logger.info(f"Committing {hash} with wallet {wallet_name}@{wallet_hotkey}")
 
-    async def _commit():
+    async def _commit_hash():
         sub = await get_subtensor()
-        data = json.dumps({"model": repo, "revision": revision})
+        data = json.dumps({"commit_hash": hash})
+        while True:
+            try:
+                await sub.set_reveal_commitment(
+                    wallet=wallet, netuid=settings.netuid, data=data, blocks_until_reveal=2
+                )
+                break
+            except MetadataError as e:
+                if "SpaceLimitExceeded" in str(e):
+                    await sub.wait_for_block()
+                else:
+                    raise
+
+    try:
+        asyncio.run(_commit_hash())
+        click.echo(
+            json.dumps(
+                {
+                    "success": True,
+                    "commit_hash": hash,
+                }
+            )
+        )
+    except Exception as e:
+        logger.error("Commit failed: %s", e)
+        click.echo(json.dumps({"success": False, "error": str(e)}))
+
+
+@cli.command("commit-repo")
+@click.option("--repo", required=True, help="HF repo id (e.g. <user>/<repo>)")
+@click.option("--coldkey", default=None, help="Name of the cold wallet to use.")
+@click.option("--hotkey", default=None, help="Name of the hot wallet to use.")
+def commit_repo(repo: str, coldkey: str, hotkey: str):
+    """Commit repo+revision on-chain (separate from deployment)."""
+    wallet_name = coldkey or settings.wallet_name
+    wallet_hotkey = hotkey or settings.wallet_hotkey
+    wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
+
+    logger.info(f"Committing {repo} with wallet {wallet_name}@{wallet_hotkey}")
+
+    async def _commit_repo():
+        sub = await get_subtensor()
+        data = json.dumps({"repo": repo})
         while True:
             try:
                 await sub.set_reveal_commitment(
@@ -63,13 +105,12 @@ def commit(repo: str, revision: str, coldkey: str, hotkey: str):
                     raise
 
     try:
-        asyncio.run(_commit())
+        asyncio.run(_commit_repo())
         click.echo(
             json.dumps(
                 {
                     "success": True,
                     "repo": repo,
-                    "revision": revision,
                 }
             )
         )
