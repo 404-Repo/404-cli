@@ -12,7 +12,7 @@ pip install -r requirements.txt
 ### Commit hash of your solution
 ```bash
 python commit.py commit-hash \
-  --hash <your_commit_sha> \
+  --hash <full_40_char_commit_sha> \
   --wallet.name <wallet> \
   --wallet.hotkey <hotkey>
 ```
@@ -20,7 +20,7 @@ python commit.py commit-hash \
 ### Commit repository reference of your solution
 ```bash
 python commit.py commit-repo \
-  --repo <reference_to_your_repo> \
+  --repo <owner/repo-name> \
   --wallet.name <wallet> \
   --wallet.hotkey <hotkey>
 ```
@@ -61,16 +61,22 @@ Git commit hashes are deterministic — derived from your code, commit message, 
 ```bash
 # 1. Create your solution in a PRIVATE repository
 git add . && git commit -m "My solution"
-git log --oneline -1
-# → a1b2c3d4 ← this is your commit SHA
+git log --format="%H" -1
+# → a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 ← full 40-char SHA
 
 # 2. Submit the hash to claim your timestamp
-python commit.py commit-hash --hash a1b2c3d4 --wallet.name miner --wallet.hotkey default
+python commit.py commit-hash \
+  --hash a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 \
+  --wallet.name miner \
+  --wallet.hotkey default
 
 # 3. Make your repo accessible to validators
 
 # 4. Submit the repo reference
-python commit.py commit-repo --repo https://github.com/you/your-solution --wallet.name miner --wallet.hotkey default
+python commit.py commit-repo \
+  --repo your-username/your-solution \
+  --wallet.name miner \
+  --wallet.hotkey default
 ```
 
 ### What Breaks the Hash
