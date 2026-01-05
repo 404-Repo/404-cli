@@ -5,6 +5,8 @@ import sys
 import bittensor as bt
 import click
 from loguru import logger
+from targon_client import TargonClient, ContainerDeployConfig
+from targon_utils import ensure_running_container
 
 
 @click.group()
@@ -163,6 +165,47 @@ def _parse_commitments(commitments: dict) -> list[dict]:
 
     results.sort(key=lambda x: x["commit_block"])
     return results
+
+
+@cli.command("check-image")
+@click.option("--image-url", required=True, help="URL of the image to check")
+@click.option("--targon-api-key", required=True, help="Targon API key")
+def check_image_cmd(image_url: str, targon_api_key: str) -> None:
+    """Check if the image is accessible."""
+    logger.info(f"Checking image: {image_url}")
+    click.echo(f"Checking image: {image_url}", err=True)
+    
+    async def _check() -> None:
+        click.echo("Connecting to Targon...", err=True)
+        async with TargonClient(api_key=targon_api_key) as targon:
+            config = ContainerDeployConfig(
+                image=image_url,
+                resource_name="h200-small",
+                port=10006,
+                container_concurrency=1,
+            )
+            container = await ensure_running_container(
+                client=targon,
+                name="check-image",
+                config=config,
+                echo=lambda msg: click.echo(msg, err=True),
+            )
+            if container:
+                click.echo(f"Container deployed successfully. UID: {container.uid}", err=True)
+                click.echo("Cleaning up container...", err=True)
+                await targon.delete_container(container.uid)
+                click.echo("Container deleted successfully", err=True)
+            else:
+                raise RuntimeError("Failed to deploy and start container")
+    
+    try:
+        asyncio.run(_check())
+        logger.info("Image check completed successfully")
+        click.echo(json.dumps({"success": True, "image_url": image_url}))
+    except Exception as e:
+        logger.error(f"Image check failed: {e}")
+        click.echo(json.dumps({"success": False, "error": str(e)}))
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
