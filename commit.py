@@ -1,5 +1,6 @@
 import asyncio
 import json
+import requests
 import sys
 
 import bittensor as bt
@@ -73,6 +74,61 @@ def commit_repo_cmd(
     )
 
 
+@cli.command("commit-ply-storage")
+@click.option(
+    "--s3-url", 
+    required=True, 
+    help="URL of the S3 compatible object storage that saves the generated PLY files"
+)
+@click.option("--netuid", default=17, show_default=True)
+@click.option(
+    "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
+)
+@click.option("--wallet.name", "wallet_name", required=True)
+@click.option("--wallet.hotkey", "wallet_hotkey", required=True)
+@click.option("--wallet.path", "wallet_path", default=None)
+def commit_ply_storage_cmd(
+    s3_url: str,
+    netuid: int,
+    subtensor_endpoint: str,
+    wallet_name: str,
+    wallet_hotkey: str,
+    wallet_path: str | None,
+) -> None:
+    """Commit PLY file storage on-chain."""
+    try:
+        response = requests.head(s3_url, timeout=10)
+        if not response.ok:
+            click.echo(
+                json.dumps(
+                    {
+                        "success": False, 
+                        "error": f"S3 URL {s3_url} is not accessible: {response.status_code}"
+                    }
+                )
+            )
+            raise SystemExit(1)
+    except requests.RequestException as e:
+        click.echo(
+            json.dumps(
+                {
+                    "success": False, 
+                    "error": f"S3 URL {s3_url} is not accessible: {str(e)}"
+                }
+            )
+        )
+        raise SystemExit(1)
+    
+    _run_commit(
+        data={"s3_url": s3_url},
+        netuid=netuid,
+        subtensor_endpoint=subtensor_endpoint,
+        wallet_name=wallet_name,
+        wallet_hotkey=wallet_hotkey,
+        wallet_path=wallet_path,
+    )
+
+
 def _run_commit(
     *,
     data: dict,
@@ -133,6 +189,7 @@ def _parse_commitments(commitments: dict) -> list[dict]:
     for hotkey, entries in commitments.items():
         latest_commit: tuple[int, str] | None = None
         latest_repo: tuple[int, str] | None = None
+        latest_s3_url: tuple[int, str] | None = None
 
         for block, data in entries:
             try:
@@ -148,6 +205,10 @@ def _parse_commitments(commitments: dict) -> list[dict]:
                 if latest_repo is None or block > latest_repo[0]:
                     latest_repo = (block, repo)
 
+            if s3_url := parsed.get("s3_url"):
+                if latest_s3_url is None or block > latest_s3_url[0]:
+                    latest_s3_url = (block, s3_url)
+
         if latest_commit is None:
             continue
 
@@ -158,6 +219,8 @@ def _parse_commitments(commitments: dict) -> list[dict]:
                 "commit_block": latest_commit[0],
                 "repo": latest_repo[1] if latest_repo else None,
                 "repo_block": latest_repo[0] if latest_repo else None,
+                "s3_url": latest_s3_url[1] if latest_s3_url else None,
+                "s3_url_block": latest_s3_url[0] if latest_s3_url else None,
             }
         )
 
