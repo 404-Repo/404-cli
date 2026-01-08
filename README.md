@@ -87,3 +87,70 @@ Avoid these after submitting — they create new commits with different SHAs:
 - `git rebase`
 - Cherry-picking into a different repo
 - Re-committing the same files (different timestamp = different hash)
+
+
+## Utility commands
+
+### Check Image
+
+The `check-image` command verifies that a Docker image is accessible and can be deployed on Targon. It deploys a temporary container, verifies it's running, and then cleans it up. This is useful for validating Docker images before using them in batch generation.
+
+**Options:**
+- `--image-url` (required): URL of the Docker image to check
+- `--targon-api-key` (required): Targon API key for authentication
+
+**Example:**
+```bash
+python commit.py check-image \
+  --image-url docker.io/username/model-generator:v1.0.0 \
+  --targon-api-key your-targon-api-key-here
+```
+
+### Generate Models
+
+The `generate` command processes a list of prompt images and generates 3D models (.ply files) using Targon containers. It:
+1. Reads prompts (image URLs) from a text file
+2. Deploys a Targon container with the specified Docker image
+3. Downloads each prompt image from its URL
+4. Generates a 3D model for each prompt using the container
+5. Uploads all generated models to S3/R2 storage
+6. Cleans up the container when finished
+
+**Options:**
+- `--prompts-file` (required): Path to a text file containing one image URL per line
+- `--image-url` (required): URL of the Docker image to use for generation
+- `--targon-api-key` (required): Targon API key for authentication
+- `--s3-access-key-id` (required): S3/R2 access key ID
+- `--s3-secret-access-key` (required): S3/R2 secret access key
+- `--s3-bucket-name` (required): S3/R2 bucket name where generated models will be saved
+- `--s3-url` (required): S3/R2 endpoint URL
+- `--seed` (required): Seed value for generation (ensures reproducibility)
+- `--folder` (optional, default: "results"): Folder path in the S3 bucket where models will be saved
+
+**Example:**
+
+First, create a file `prompts.txt` with image URLs:
+```text
+https://domain.org/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.png
+https://domain.org/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.png
+https://domain.org/a7da89058a9f913d0012099401e7e271fa02d0e660bd560955b18c1cdc761370.png
+```
+
+Then run the generate command:
+```bash
+python commit.py generate \
+  --prompts-file prompts.txt \
+  --image-url docker.io/username/model-generator:v1.0.0 \
+  --targon-api-key your-targon-api-key-here \
+  --s3-access-key-id your-access-key-id \
+  --s3-secret-access-key your-secret-access-key \
+  --s3-bucket-name my-bucket \
+  --s3-url https://your-account-id.r2.cloudflarestorage.com \
+  --seed 42 \
+  --folder results
+```
+
+The generated files will be saved to S3 at paths like:
+- `results/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.ply`
+- `results/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.ply`
+- etc.

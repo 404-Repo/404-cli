@@ -64,16 +64,16 @@ async def wait_for_healthy(
         while time_elapsed < timeout:
             try:
                 response = await http.get(health_url)
+                response.raise_for_status()
                 if response.status_code == 200:
+                    _log(f"Container at {url} healthy", echo, "info")  
                     return True
-            except httpx.RequestError as e:
-                _log(f"Health check failed: {e}", echo, "debug")
+            except Exception as e:
+                _log(f"Health check in progress: {time_elapsed:.1f}/{timeout:.1f}s", echo, "info")
                 await asyncio.sleep(check_interval)
                 time_elapsed = asyncio.get_running_loop().time() - start
-
-    _log(f"Container at {url} not healthy within {timeout}s. Timeout reached.", echo, "warning")
+    _log(f"Container at {url} not healthy within {timeout}s. Timeout reached.", echo, "error")
     return False
-
 
 async def ensure_running_container(
     client: TargonClient,
@@ -81,7 +81,7 @@ async def ensure_running_container(
     config: ContainerDeployConfig,
     *,
     deploy_timeout: float = 600.0,
-    warmup_timeout: float = 600.0,
+    warmup_timeout: float = 1800.0,
     check_interval: float = 10.0,
     echo: Callable[[str], None] | None = None,
 ) -> ServerlessResourceListItem | None:
@@ -118,7 +118,7 @@ async def ensure_running_container(
     _log(f"Container ({container.uid}) visible in {deploy_time:.1f}s", echo)
 
     warmup_start = asyncio.get_running_loop().time()
-    _log(f"Waiting for container to become healthy.", echo)
+    _log(f"Waiting {warmup_timeout}s for container to become healthy.", echo)
     if not await wait_for_healthy(
         container.url,
         timeout=warmup_timeout,
