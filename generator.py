@@ -1,51 +1,36 @@
 import asyncio
+from pathlib import Path
 from typing import Callable
 
 import httpx
 
-from r2_client import R2Client
-from targon_client import TargonClient, ContainerDeployConfig
-from targon_utils import ensure_running_container
-
 
 class Generator:
-    """Generator for processing prompts and creating 3D models using Targon containers."""
+    """Generator for processing prompts and creating 3D models."""
 
     def __init__(
         self,
-        image_url: str,
-        targon_api_key: str,
-        s3_access_key_id: str,
-        s3_secret_access_key: str,
-        s3_bucket_name: str,
-        s3_url: str,
+        endpoint: str,
         seed: int,
-        folder: str = "results",
+        output_folder: Path,
         echo: Callable[[str], None] | None = None,
     ) -> None:
         """
         Initialize the Generator.
 
         Args:
-            image_url: URL of docker image to use for generation
-            targon_api_key: Targon API key
-            s3_access_key_id: S3/R2 access key ID
-            s3_secret_access_key: S3/R2 secret access key
-            s3_bucket_name: S3/R2 bucket name where generated models will be saved
-            s3_url: S3/R2 endpoint URL
+            endpoint: Generator endpoint URL
             seed: Seed value for generation (ensures reproducibility)
-            folder: Folder path in the S3 bucket where models will be saved
+            output_folder: Path to folder where .ply files will be saved
             echo: Optional callback function for logging messages
         """
-        self.image_url = image_url
-        self.targon_api_key = targon_api_key
-        self.s3_access_key_id = s3_access_key_id
-        self.s3_secret_access_key = s3_secret_access_key
-        self.s3_bucket_name = s3_bucket_name
-        self.s3_url = s3_url
+        self.endpoint = endpoint
         self.seed = seed
-        self.folder = folder
+        self.output_folder = Path(output_folder)
         self.echo = echo or (lambda msg: None)
+        
+        # Create output folder if it doesn't exist
+        self.output_folder.mkdir(parents=True, exist_ok=True)
 
     async def generate_all(self, prompts: list[str]) -> None:
         """
@@ -58,56 +43,29 @@ class Generator:
             RuntimeError: If generation fails
             KeyboardInterrupt: If interrupted by user
         """
-        container = None
-        targon = None
         tasks = []
         try:
-            self.echo("Connecting to Targon...")
-            targon = TargonClient(api_key=self.targon_api_key)
-            async with targon:
-                config = ContainerDeployConfig(
-                    image=self.image_url,
-                    resource_name="h200-small",
-                    port=10006,
-                    container_concurrency=1,
+            self.echo(f"Processing {len(prompts)} prompts...")
+            request_sem = asyncio.Semaphore(1)  # Using semaphores to limit request to one at a time.
+            process_sem = asyncio.Semaphore(8)  # Limiting request to control traffic
+            tasks = [
+                asyncio.create_task(
+                    self._process_prompt(
+                        request_sem=request_sem,
+                        process_sem=process_sem,
+                        endpoint=self.endpoint,
+                        prompt=prompt,
+                    )
                 )
-                container = await ensure_running_container(
-                    client=targon,
-                    name="ply-generator",
-                    config=config,
-                    echo=self.echo,
-                )
-                if not container:
-                    raise RuntimeError("Failed to deploy and start container")
-
-                async with R2Client(
-                    bucket=self.s3_bucket_name,
-                    access_key_id=self.s3_access_key_id,
-                    secret_access_key=self.s3_secret_access_key,
-                    r2_endpoint=self.s3_url,
-                ) as r2:
-                    self.echo(f"Processing {len(prompts)} prompts...")
-                    request_sem = asyncio.Semaphore(1)  # Using semaphores to limit request to one at a time.
-                    process_sem = asyncio.Semaphore(8)  # Limiting request to control traffic
-                    tasks = [
-                        asyncio.create_task(
-                            self._process_prompt(
-                                request_sem=request_sem,
-                                process_sem=process_sem,
-                                endpoint=container.url,
-                                prompt=prompt,
-                                r2_client=r2,
-                            )
-                        )
-                        for prompt in prompts
-                    ]
-                    self.echo(f"Generated {len(tasks)} tasks")
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-                    for prompt, result in zip(prompts, results):
-                        if isinstance(result, Exception):
-                            self.echo(f"Prompt {prompt} generation failed: {result}")
-                        else:
-                            self.echo(f"Prompt {prompt} generation successful")
+                for prompt in prompts
+            ]
+            self.echo(f"Generated {len(tasks)} tasks")
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for prompt, result in zip(prompts, results):
+                if isinstance(result, Exception):
+                    self.echo(f"Prompt {prompt} generation failed: {result}")
+                else:
+                    self.echo(f"Prompt {prompt} generation successful")
             self.echo("Generation completed")
         except (KeyboardInterrupt, asyncio.CancelledError):
             self.echo("\nInterrupted by user. Cancelling tasks and cleaning up...")
@@ -122,16 +80,6 @@ class Generator:
         except Exception as e:
             self.echo(f"Generation failed: {e}")
             raise
-        finally:
-            if container:
-                try:
-                    self.echo("Deleting container...")
-                    # Create a new client for cleanup since we may have exited the async context
-                    async with TargonClient(api_key=self.targon_api_key) as cleanup_targon:
-                        await cleanup_targon.delete_container(container.uid)
-                    self.echo("Container deleted successfully")
-                except Exception as cleanup_error:
-                    self.echo(f"Error during container cleanup: {cleanup_error}")
 
     async def _process_prompt(
         self,
@@ -140,17 +88,15 @@ class Generator:
         process_sem: asyncio.Semaphore,
         endpoint: str,
         prompt: str,
-        r2_client: R2Client,
     ) -> None:
         """
-        Downloads a prompt image from a public URL, generates a 3D model from it, and uploads the result to R2.
+        Downloads a prompt image from a public URL, generates a 3D model from it, and saves the result locally.
 
         Args:
             request_sem: Semaphore to limit concurrent requests
             process_sem: Semaphore to limit concurrent processing
             endpoint: Targon container endpoint URL
             prompt: Image URL to process
-            r2_client: R2 client for uploading results
 
         Raises:
             RuntimeError: If generation fails
@@ -177,10 +123,10 @@ class Generator:
                     self.echo(f"Prompt {prompt_key} generation failed")
                     raise RuntimeError(f"Prompt {prompt_key} generation failed")
 
-            await r2_client.upload(
-                key=f"{self.folder}/{prompt_key}.ply",
-                data=result,
-            )
+            # Save .ply file to local filesystem
+            output_path = self.output_folder / f"{prompt_key}.ply"
+            output_path.write_bytes(result)
+            self.echo(f"Saved {prompt_key}.ply to {output_path}")
 
     async def _generate_with_retries(
         self,

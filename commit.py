@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 import bittensor as bt
 import click
@@ -8,6 +9,11 @@ from loguru import logger
 from targon_client import TargonClient, ContainerDeployConfig
 from targon_utils import ensure_running_container
 from generator import Generator
+
+
+_GENERATOR_POD_NAME: str = "generator"
+_RENDER_POD_NAME: str = "render"
+_JUDGE_POD_NAME: str = "judge"
 
 
 @click.group()
@@ -168,15 +174,14 @@ def _parse_commitments(commitments: dict) -> list[dict]:
     return results
 
 
-@cli.command("check-image")
-@click.option("--image-url", required=True, help="URL of the image to check")
+@cli.command("start-generator")
+@click.option("--image-url", required=True, help="URL of the generator image to start")
 @click.option("--targon-api-key", required=True, help="Targon API key")
-def check_image_cmd(image_url: str, targon_api_key: str) -> None:
-    """Check if the image is accessible."""
-    logger.info(f"Checking image: {image_url}")
-    click.echo(f"Checking image: {image_url}", err=True)
+def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
+    """Start the generator container."""
+    click.echo(f"Starting generator: {image_url}", err=True)
     
-    async def _check() -> None:
+    async def _start() -> None:
         container = None
         try:
             click.echo("Connecting to Targon...", err=True)
@@ -189,15 +194,13 @@ def check_image_cmd(image_url: str, targon_api_key: str) -> None:
                 )
                 container = await ensure_running_container(
                     client=targon,
-                    name="check-image",
+                    name=_GENERATOR_POD_NAME,
                     config=config,
                     echo=lambda msg: click.echo(msg, err=True),
                 )
                 if container:
                     click.echo(f"Container deployed successfully. UID: {container.uid}", err=True)
-                    click.echo("Cleaning up container...", err=True)
-                    await targon.delete_container(container.uid)
-                    click.echo("Container deleted successfully", err=True)
+                    click.echo(f"Container URL: {container.url}", err=True)
                 else:
                     raise RuntimeError("Failed to deploy and start container")
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -212,41 +215,54 @@ def check_image_cmd(image_url: str, targon_api_key: str) -> None:
             raise
     
     try:
-        asyncio.run(_check())
-        logger.info("Image check completed successfully")
+        asyncio.run(_start())
         click.echo(json.dumps({"success": True, "image_url": image_url}))
     except KeyboardInterrupt:
-        logger.warning("Image check interrupted by user")
+        logger.warning("Generator start interrupted by user")
         click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
         raise SystemExit(130)  # Standard exit code for SIGINT
     except Exception as e:
-        logger.error(f"Image check failed: {e}")
+        logger.error(f"Generator start failed: {e}")
+        click.echo(json.dumps({"success": False, "error": str(e)}))
+        raise SystemExit(1)
+
+
+@cli.command("stop-pods")
+@click.option("--targon-api-key", required=True, help="Targon API key.")
+def stop_pods_cmd(targon_api_key: str) -> None:
+    """Stop the generator, render and judge pods."""
+    click.echo("Stopping pods...", err=True)
+    async def _stop() -> None:
+        async with TargonClient(api_key=targon_api_key) as targon:
+            containers = await targon.list_containers(prefix=_GENERATOR_POD_NAME)
+            for c in containers:
+                if c.name in [_GENERATOR_POD_NAME, _RENDER_POD_NAME, _JUDGE_POD_NAME]:
+                    click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
+                    await targon.delete_container(c.uid)
+    try:
+        asyncio.run(_stop())
+    except KeyboardInterrupt:
+        logger.warning("Pods stop interrupted by user")
+        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
+        raise SystemExit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        logger.error(f"Pods stop failed: {e}")
         click.echo(json.dumps({"success": False, "error": str(e)}))
         raise SystemExit(1)
 
 
 @cli.command("generate")
 @click.option("--prompts-file", required=True, help="Path to the file with prompts that are valid URLs.")
-@click.option("--image-url", required=True, help="URL of docker image to use for generation.")
-@click.option("--targon-api-key", required=True, help="Targon API key.")
-@click.option("--s3-access-key-id", required=True, help="S3 access key ID.")
-@click.option("--s3-secret-access-key", required=True, help="S3 secret access key.")
-@click.option("--s3-bucket-name", required=True, help="S3 bucket name where to save generated models.")
-@click.option("--s3-url", required=True, help="S3 URL where to save generated models.")
+@click.option("--endpoint", required=True, help="Generator endpoint URL.")
 @click.option("--seed", required=True, help="Seed for generation.")
-@click.option("--folder", default="results", help="Folder to save generated models.")
+@click.option("--output-folder", default="results", help="Folder path where generated .ply files will be saved.")
 def generate_cmd(
     prompts_file: str,
-    image_url: str,
-    targon_api_key: str,
-    s3_access_key_id: str,
-    s3_secret_access_key: str,
-    s3_bucket_name: str,
-    s3_url: str,
+    endpoint: str,
     seed: str,
-    folder: str,
+    output_folder: str,
 ) -> None:  
-    """Generate models using Targon."""
+    """Generate models using the generator endpoint."""
     # Read prompts from prompt file
     click.echo("Reading prompts from file...", err=True)
     try:
@@ -267,14 +283,9 @@ def generate_cmd(
 
     # Create Generator instance
     generator = Generator(
-        image_url=image_url,
-        targon_api_key=targon_api_key,
-        s3_access_key_id=s3_access_key_id,
-        s3_secret_access_key=s3_secret_access_key,
-        s3_bucket_name=s3_bucket_name,
-        s3_url=s3_url,
+        endpoint=endpoint,
         seed=int(seed),
-        folder=folder,
+        output_folder=Path(output_folder),
         echo=lambda msg: click.echo(msg, err=True),
     )
     

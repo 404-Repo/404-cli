@@ -91,66 +91,103 @@ Avoid these after submitting — they create new commits with different SHAs:
 
 ## Utility commands
 
-### Check Image
+### Start Generator
 
-The `check-image` command verifies that a Docker image is accessible and can be deployed on Targon. It deploys a temporary container, verifies it's running, and then cleans it up. This is useful for validating Docker images before using them in batch generation.
+The `start-generator` command deploys and starts a generator container on Targon. It deploys the container and outputs the container URL which can then be used with the `generate` command.
 
 **Options:**
-- `--image-url` (required): URL of the Docker image to check
+- `--image-url` (required): URL of the Docker image to deploy
 - `--targon-api-key` (required): Targon API key for authentication
 
 **Example:**
 ```bash
-python commit.py check-image \
+python commit.py start-generator \
   --image-url docker.io/username/model-generator:v1.0.0 \
   --targon-api-key your-targon-api-key-here
 ```
 
+**Output:**
+On success, outputs JSON with the container URL:
+```json
+{"success": true, "image_url": "docker.io/username/model-generator:v1.0.0"}
+```
+
+The container URL is also displayed on stderr and should be used as the `--endpoint` parameter for the `generate` command.
+
 ### Generate Models
 
-The `generate` command processes a list of prompt images and generates 3D models (.ply files) using Targon containers. It:
+The `generate` command processes a list of prompt images and generates 3D models (.ply files) using a generator endpoint. It:
 1. Reads prompts (image URLs) from a text file
-2. Deploys a Targon container with the specified Docker image
-3. Downloads each prompt image from its URL
-4. Generates a 3D model for each prompt using the container
-5. Uploads all generated models to S3/R2 storage
-6. Cleans up the container when finished
+2. Downloads each prompt image from its URL
+3. Generates a 3D model for each prompt using the generator endpoint
+4. Saves all generated models as .ply files to the local filesystem
 
 **Options:**
 - `--prompts-file` (required): Path to a text file containing one image URL per line
-- `--image-url` (required): URL of the Docker image to use for generation
-- `--targon-api-key` (required): Targon API key for authentication
-- `--s3-access-key-id` (required): S3/R2 access key ID
-- `--s3-secret-access-key` (required): S3/R2 secret access key
-- `--s3-bucket-name` (required): S3/R2 bucket name where generated models will be saved
-- `--s3-url` (required): S3/R2 endpoint URL
+- `--endpoint` (required): Generator endpoint URL (obtained from `start-generator` command)
 - `--seed` (required): Seed value for generation (ensures reproducibility)
-- `--folder` (optional, default: "results"): Folder path in the S3 bucket where models will be saved
+- `--output-folder` (optional, default: "results"): Local folder path where generated .ply files will be saved
 
 **Example:**
 
-First, create a file `prompts.txt` with image URLs:
-```text
-https://domain.org/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.png
-https://domain.org/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.png
-https://domain.org/a7da89058a9f913d0012099401e7e271fa02d0e660bd560955b18c1cdc761370.png
+First, start the generator container:
+```bash
+python commit.py start-generator \
+  --image-url docker.io/username/model-generator:v1.0.0 \
+  --targon-api-key your-targon-api-key-here
 ```
 
-Then run the generate command:
+Note the container URL from the output (e.g., `https://generator-abc123.targon.io`).
+
+Then, create a file `prompts.txt` with image URLs.
+
+Run the generate command:
 ```bash
 python commit.py generate \
   --prompts-file prompts.txt \
-  --image-url docker.io/username/model-generator:v1.0.0 \
-  --targon-api-key your-targon-api-key-here \
-  --s3-access-key-id your-access-key-id \
-  --s3-secret-access-key your-secret-access-key \
-  --s3-bucket-name my-bucket \
-  --s3-url https://your-account-id.r2.cloudflarestorage.com \
+  --endpoint https://generator-abc123.targon.io \
   --seed 42 \
-  --folder results
+  --output-folder results
 ```
 
-The generated files will be saved to S3 at paths like:
+The generated files will be saved locally at paths like:
 - `results/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.ply`
 - `results/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.ply`
 - etc.
+
+**Output:**
+On success, outputs JSON:
+```json
+{"success": true}
+```
+
+On failure, outputs error JSON:
+```json
+{"success": false, "error": "Error message here"}
+```
+
+**Notes:**
+- Prompts are processed with concurrency control to limit resource usage
+- Each generation attempt includes automatic retries (up to 3 attempts) with exponential backoff
+- Generation progress and status messages are output to stderr, while JSON results go to stdout
+- The output folder is created automatically if it doesn't exist
+
+### Stop Pods
+
+The `stop-pods` command stops all running generator, render, and judge containers on Targon. This is useful for cleaning up resources after completing generation tasks.
+
+**Options:**
+- `--targon-api-key` (required): Targon API key for authentication
+
+**Example:**
+```bash
+python commit.py stop-pods \
+  --targon-api-key your-targon-api-key-here
+```
+
+**Output:**
+The command outputs status messages to stderr as it stops each container. No JSON output is produced on success.
+
+**Notes:**
+- Only containers with names matching "generator", "render", or "judge" are stopped
+- If a container is already stopped, it will be skipped
