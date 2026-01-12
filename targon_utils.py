@@ -53,10 +53,15 @@ async def wait_for_healthy(
     *,
     timeout: float,  # noqa: ASYNC109
     check_interval: float = 5.0,
+    health_check_path: str = "/health",
     echo: Callable[[str], None] | None = None,
 ) -> bool:
     """Wait for the container health endpoint to return 200 (stage 2)."""
-    health_url = f"{url}/health"
+    # If health_check_path is a full URL, use it directly; otherwise append to container URL
+    if health_check_path.startswith("http://") or health_check_path.startswith("https://"):
+        health_url = health_check_path
+    else:
+        health_url = f"{url}{health_check_path}"
 
     async with httpx.AsyncClient(timeout=30.0) as http:
         start = asyncio.get_running_loop().time()
@@ -69,7 +74,7 @@ async def wait_for_healthy(
                     _log(f"Container at {url} healthy", echo, "info")  
                     return True
             except Exception as e:
-                _log(f"Health check in progress: {time_elapsed:.1f}/{timeout:.1f}s", echo, "info")
+                _log(f"Health check in progress: {time_elapsed:.1f}/{timeout:.1f}s {health_url} {e}", echo, "info")
                 await asyncio.sleep(check_interval)
                 time_elapsed = asyncio.get_running_loop().time() - start
     _log(f"Container at {url} not healthy within {timeout}s. Timeout reached.", echo, "error")
@@ -81,8 +86,9 @@ async def ensure_running_container(
     config: ContainerDeployConfig,
     *,
     deploy_timeout: float = 600.0,
-    warmup_timeout: float = 1800.0,
+    warmup_timeout: float = 3600.0,
     check_interval: float = 10.0,
+    health_check_path: str = "/health",
     echo: Callable[[str], None] | None = None,
 ) -> ServerlessResourceListItem | None:
     """
@@ -116,6 +122,8 @@ async def ensure_running_container(
 
     deploy_time = asyncio.get_running_loop().time() - deploy_start
     _log(f"Container ({container.uid}) visible in {deploy_time:.1f}s", echo)
+    _log(f"Container URL: {container.url}", echo)
+    _log(f"Health check path: {health_check_path}", echo)
 
     warmup_start = asyncio.get_running_loop().time()
     _log(f"Waiting {warmup_timeout}s for container to become healthy.", echo)
@@ -123,6 +131,7 @@ async def ensure_running_container(
         container.url,
         timeout=warmup_timeout,
         check_interval=check_interval,
+        health_check_path=health_check_path,
         echo=echo,
     ):
         _log(f"Container failed health check, deleting", echo, "error")

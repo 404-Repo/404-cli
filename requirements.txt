@@ -4,5 +4,5 @@ bittensor-wallet==4.0.1
 click==8.3.1
 pydantic==2.12.4
 pydantic-settings==2.12.0
-targon-sdk @ git+https://github.com/manifold-inc/targon-sdk.git@config#egg=targon-sdk
+targon-sdk @ git+https://github.com/manifold-inc/targon-sdk.git@main
 httpx==0.28.1

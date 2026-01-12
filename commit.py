@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Callable
 
 import bittensor as bt
 import click
@@ -12,7 +13,12 @@ from generator import Generator
 
 
 _GENERATOR_POD_NAME: str = "generator"
+_GENERATOR_PORT: int = 10006
+_GENERATOR_HEALTH_CHECK_PATH: str = "/health"
 _RENDER_POD_NAME: str = "render"
+_RENDER_PORT: int = 8000
+_RENDER_HEALTH_CHECK_PATH: str = "/health"
+_RENDER_IMAGE_URL: str = "ghcr.io/404-repo/render-service:latest"
 _JUDGE_POD_NAME: str = "judge"
 
 
@@ -181,41 +187,18 @@ def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
     """Start the generator container."""
     click.echo(f"Starting generator: {image_url}", err=True)
     
-    async def _start() -> None:
-        container = None
-        try:
-            click.echo("Connecting to Targon...", err=True)
-            async with TargonClient(api_key=targon_api_key) as targon:
-                config = ContainerDeployConfig(
-                    image=image_url,
-                    resource_name="h200-small",
-                    port=10006,
-                    container_concurrency=1,
-                )
-                container = await ensure_running_container(
-                    client=targon,
-                    name=_GENERATOR_POD_NAME,
-                    config=config,
-                    echo=lambda msg: click.echo(msg, err=True),
-                )
-                if container:
-                    click.echo(f"Container deployed successfully. UID: {container.uid}", err=True)
-                    click.echo(f"Container URL: {container.url}", err=True)
-                else:
-                    raise RuntimeError("Failed to deploy and start container")
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            click.echo("\nInterrupted by user. Cleaning up...", err=True)
-            if container:
-                try:
-                    async with TargonClient(api_key=targon_api_key) as targon:
-                        await targon.delete_container(container.uid)
-                        click.echo("Container deleted successfully", err=True)
-                except Exception as cleanup_error:
-                    click.echo(f"Error during cleanup: {cleanup_error}", err=True)
-            raise
-    
     try:
-        asyncio.run(_start())
+        asyncio.run(
+            _create_container(
+                image_url=image_url,
+                container_name=_GENERATOR_POD_NAME,
+                targon_api_key=targon_api_key,
+                resource_name="h200-small",
+                port=_GENERATOR_PORT,
+                health_check_path=_GENERATOR_HEALTH_CHECK_PATH,
+                echo=lambda msg: click.echo(msg, err=True),
+            )
+        )
         click.echo(json.dumps({"success": True, "image_url": image_url}))
     except KeyboardInterrupt:
         logger.warning("Generator start interrupted by user")
@@ -223,6 +206,35 @@ def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
         raise SystemExit(130)  # Standard exit code for SIGINT
     except Exception as e:
         logger.error(f"Generator start failed: {e}")
+        click.echo(json.dumps({"success": False, "error": str(e)}))
+        raise SystemExit(1)
+
+
+@cli.command("start-renderer")
+@click.option("--targon-api-key", required=True, help="Targon API key")
+def start_renderer_cmd(targon_api_key: str) -> None:
+    """Start the renderer container."""
+    click.echo(f"Starting renderer: {_RENDER_IMAGE_URL}", err=True)
+    
+    try:
+        asyncio.run(
+            _create_container(
+                image_url=_RENDER_IMAGE_URL,
+                container_name=_RENDER_POD_NAME,
+                targon_api_key=targon_api_key,
+                resource_name="rtx4090-small",
+                port=_RENDER_PORT,
+                health_check_path=_RENDER_HEALTH_CHECK_PATH,
+                echo=lambda msg: click.echo(msg, err=True),
+            )
+        )
+        click.echo(json.dumps({"success": True, "image_url": _RENDER_IMAGE_URL}))
+    except KeyboardInterrupt:
+        logger.warning("Renderer start interrupted by user")
+        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
+        raise SystemExit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        logger.error(f"Renderer start failed: {e}")
         click.echo(json.dumps({"success": False, "error": str(e)}))
         raise SystemExit(1)
 
@@ -236,6 +248,7 @@ def stop_pods_cmd(targon_api_key: str) -> None:
         async with TargonClient(api_key=targon_api_key) as targon:
             containers = await targon.list_containers(prefix=_GENERATOR_POD_NAME)
             for c in containers:
+                click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
                 if c.name in [_GENERATOR_POD_NAME, _RENDER_POD_NAME, _JUDGE_POD_NAME]:
                     click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
                     await targon.delete_container(c.uid)
@@ -299,6 +312,67 @@ def generate_cmd(
     except Exception as e:
         click.echo(f"Generation failed: {e}", err=True)
         raise SystemExit(1)
+
+
+async def _create_container(
+    image_url: str,
+    container_name: str,
+    targon_api_key: str,
+    resource_name: str,
+    port: int,
+    health_check_path: str,
+    echo: Callable[[str], None],
+) -> None:
+    """
+    Create and deploy a container on Targon.
+
+    Args:
+        image_url: Docker image URL to deploy
+        container_name: Name for the container
+        targon_api_key: Targon API key for authentication
+        resource_name: Targon resource name (e.g., "h200-small")
+        port: Port number for the container
+        health_check_path: Health check endpoint path (e.g., "/health") or full URL
+        echo: Callback function for logging messages
+
+    Raises:
+        RuntimeError: If container deployment fails
+        KeyboardInterrupt: If interrupted by user
+    """
+    from targon.client.serverless import ServerlessResourceListItem
+
+    container: ServerlessResourceListItem | None = None
+    try:
+        echo("Connecting to Targon...")
+        async with TargonClient(api_key=targon_api_key) as targon:
+            config = ContainerDeployConfig(
+                image=image_url,
+                resource_name=resource_name,
+                port=port,
+                container_concurrency=1,
+            )
+            container = await ensure_running_container(
+                client=targon,
+                name=container_name,
+                config=config,
+                health_check_path=health_check_path,
+                echo=echo,
+            )
+            if container:
+                echo(f"Container deployed successfully. UID: {container.uid}")
+                echo(f"Container URL: {container.url}")
+            else:
+                raise RuntimeError("Failed to deploy and start container")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        echo("\nInterrupted by user. Cleaning up...")
+        if container:
+            try:
+                async with TargonClient(api_key=targon_api_key) as targon:
+                    await targon.delete_container(container.uid)
+                    echo("Container deleted successfully")
+            except Exception as cleanup_error:
+                echo(f"Error during cleanup: {cleanup_error}")
+        raise
 
 
 if __name__ == "__main__":
