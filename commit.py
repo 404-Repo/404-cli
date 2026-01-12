@@ -10,6 +10,7 @@ from loguru import logger
 from targon_client import TargonClient, ContainerDeployConfig
 from targon_utils import ensure_running_container
 from generator import Generator
+from renderer import Renderer
 
 
 _GENERATOR_POD_NAME: str = "generator"
@@ -237,6 +238,26 @@ def start_renderer_cmd(targon_api_key: str) -> None:
         logger.error(f"Renderer start failed: {e}")
         click.echo(json.dumps({"success": False, "error": str(e)}))
         raise SystemExit(1)
+
+
+@cli.command("render")
+@click.option("--data-dir", required=True, help="Path to the directory containing the .ply files to render")
+@click.option("--endpoint", required=True, help="Renderer endpoint URL.")
+@click.option("--output-dir", default="results", help="Path to the directory where the rendered images will be saved.")
+def render_cmd(data_dir: str, endpoint: str, output_dir: str) -> None:
+    """Render the .ply files using the renderer endpoint."""
+    click.echo(f"Rendering {data_dir} with endpoint {endpoint}", err=True)
+    try:
+        renderer = Renderer(
+            data_dir=data_dir,
+            endpoint=endpoint,
+            output_dir=output_dir,
+        )
+        asyncio.run(renderer.render())
+        click.echo(json.dumps({"success": True, "output_dir": output_dir}))
+    except KeyboardInterrupt:
+        logger.warning("Renderer interrupted by user")
+        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
 
 
 @cli.command("stop-pods")
