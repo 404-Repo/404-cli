@@ -201,8 +201,8 @@ The container URL is also displayed on stderr and should be used as the `--endpo
 ### Render Models
 
 The `render` command processes .ply files and renders them to PNG images using a renderer endpoint. It:
-1. Scans the specified directory for all .ply files
-2. Sends each .ply file to the renderer endpoint
+1. Scans the specified directory for all .ply and .glb files
+2. Sends each .ply and .glb file to the renderer endpoints
 3. Saves the rendered PNG images to the output directory
 
 **Options:**
