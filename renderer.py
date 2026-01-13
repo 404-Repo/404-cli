@@ -15,11 +15,15 @@ class Renderer:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
     async def render(self) -> None:
-        """Render the .ply files using the renderer endpoint."""
+        """Render the .ply and .glb files using the renderer endpoint."""
         click.echo(f"Rendering {self._data_dir} with endpoint {self._endpoint}", err=True)
         tasks: list[asyncio.Task] = []
         try:
-            process_sem = asyncio.Semaphore(2)
+            process_sem = asyncio.Semaphore(1)
+            # Collect both .ply and .glb files
+            ply_files = list(self._data_dir.glob("*.ply"))
+            glb_files = list(self._data_dir.glob("*.glb"))
+            all_files = ply_files + glb_files
             tasks = [
                 asyncio.create_task(
                     self._process_prompt(
@@ -27,7 +31,7 @@ class Renderer:
                         file=file
                     )
                 )
-                for file in self._data_dir.glob("*.ply")
+                for file in all_files
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
         except KeyboardInterrupt:
@@ -42,7 +46,7 @@ class Renderer:
             raise SystemExit(1)
 
     async def _process_prompt(self, *, process_sem: asyncio.Semaphore, file: Path) -> None:
-        """Render the .ply files using the renderer endpoint."""
+        """Render the .ply or .glb files using the renderer endpoint."""
         async with process_sem:
             click.echo(f"Rendering {file}...", err=True)
             try:
@@ -50,10 +54,16 @@ class Renderer:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     try:
                         with open(file, "rb") as f:
-                            ply_contents = f.read()
+                            file_contents = f.read()
+                        if file.name.endswith(".ply"):
+                            endpoint = f"{self._endpoint}/render_ply" 
+                        elif file.name.endswith(".glb"):
+                            endpoint = f"{self._endpoint}/render_glb"
+                        else:
+                            raise ValueError(f"Unsupported file type: {file.name}")
                         response = await client.post(
-                            f"{self._endpoint}/render_ply",
-                            files={"file": (file.name, ply_contents, "application/octet-stream")},
+                            endpoint,
+                            files={"file": (file.name, file_contents, "application/octet-stream")},
                         )
                         response.raise_for_status()
                         content = response.content

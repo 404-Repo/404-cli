@@ -267,9 +267,8 @@ def stop_pods_cmd(targon_api_key: str) -> None:
     click.echo("Stopping pods...", err=True)
     async def _stop() -> None:
         async with TargonClient(api_key=targon_api_key) as targon:
-            containers = await targon.list_containers(prefix=_GENERATOR_POD_NAME)
+            containers = await targon.list_containers()
             for c in containers:
-                click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
                 if c.name in [_GENERATOR_POD_NAME, _RENDER_POD_NAME, _JUDGE_POD_NAME]:
                     click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
                     await targon.delete_container(c.uid)
