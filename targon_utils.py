@@ -74,7 +74,7 @@ async def wait_for_healthy(
                     _log(f"Container at {url} healthy", echo, "info")  
                     return True
             except Exception as e:
-                _log(f"Health check in progress: {time_elapsed:.1f}/{timeout:.1f}s {health_url} {e}", echo, "info")
+                _log(f"Container not ready yet: {time_elapsed:.1f}/{timeout:.1f}s", echo, "info")
                 await asyncio.sleep(check_interval)
                 time_elapsed = asyncio.get_running_loop().time() - start
     _log(f"Container at {url} not healthy within {timeout}s. Timeout reached.", echo, "error")

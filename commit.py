@@ -11,6 +11,8 @@ from targon_client import TargonClient, ContainerDeployConfig
 from targon_utils import ensure_running_container
 from generator import Generator
 from renderer import Renderer
+from targon.client.serverless import ServerlessResourceListItem
+from judge import Judge
 
 
 _GENERATOR_POD_NAME: str = "generator"
@@ -21,6 +23,17 @@ _RENDER_PORT: int = 8000
 _RENDER_HEALTH_CHECK_PATH: str = "/health"
 _RENDER_IMAGE_URL: str = "ghcr.io/404-repo/render-service:latest"
 _JUDGE_POD_NAME: str = "judge"
+_JUDGE_PORT: int = 8000
+_JUDGE_HEALTH_CHECK_PATH: str = "/health"
+_JUDGE_IMAGE_URL: str = "vllm/vllm-openai:latest"
+_JUDGE_ARGS: list[str] = [
+    "--model", "zai-org/GLM-4.1V-9B-Thinking",
+    "--max-model-len", "8096",
+    "--tensor-parallel-size", "1",
+    "--gpu-memory-utilization", "0.95",
+    "--max-num-seqs", "4",
+]
+_JUDGE_MODEL: str = "zai-org/GLM-4.1V-9B-Thinking"
 
 
 @click.group()
@@ -189,7 +202,7 @@ def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
     click.echo(f"Starting generator: {image_url}", err=True)
     
     try:
-        asyncio.run(
+        container_url = asyncio.run(
             _create_container(
                 image_url=image_url,
                 container_name=_GENERATOR_POD_NAME,
@@ -200,7 +213,7 @@ def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
                 echo=lambda msg: click.echo(msg, err=True),
             )
         )
-        click.echo(json.dumps({"success": True, "image_url": image_url}))
+        click.echo(json.dumps({"success": True, "container_url": container_url}))
     except KeyboardInterrupt:
         logger.warning("Generator start interrupted by user")
         click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
@@ -218,7 +231,7 @@ def start_renderer_cmd(targon_api_key: str) -> None:
     click.echo(f"Starting renderer: {_RENDER_IMAGE_URL}", err=True)
     
     try:
-        asyncio.run(
+        container_url = asyncio.run(
             _create_container(
                 image_url=_RENDER_IMAGE_URL,
                 container_name=_RENDER_POD_NAME,
@@ -229,7 +242,7 @@ def start_renderer_cmd(targon_api_key: str) -> None:
                 echo=lambda msg: click.echo(msg, err=True),
             )
         )
-        click.echo(json.dumps({"success": True, "image_url": _RENDER_IMAGE_URL}))
+        click.echo(json.dumps({"success": True, "container_url": container_url}))
     except KeyboardInterrupt:
         logger.warning("Renderer start interrupted by user")
         click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
@@ -259,6 +272,74 @@ def render_cmd(data_dir: str, endpoint: str, output_dir: str) -> None:
         logger.warning("Renderer interrupted by user")
         click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
 
+
+@cli.command("start-judge")
+@click.option("--targon-api-key", required=True, help="Targon API key.")
+def start_judge_cmd(targon_api_key: str) -> None:
+    """Start the judge container."""
+    click.echo(f"Starting judge: {_JUDGE_IMAGE_URL}", err=True)
+    try:
+        container_url = asyncio.run(
+            _create_container(
+                image_url=_JUDGE_IMAGE_URL,
+                container_name=_JUDGE_POD_NAME,
+                targon_api_key=targon_api_key,
+                resource_name="rtx4090-small",
+                port=_JUDGE_PORT,
+                health_check_path=_JUDGE_HEALTH_CHECK_PATH,
+                echo=lambda msg: click.echo(msg, err=True),
+                args=_JUDGE_ARGS,
+            )
+        )
+        click.echo(json.dumps({"success": True, "container_url": container_url}))
+    except KeyboardInterrupt:
+        logger.warning("Judge start interrupted by user")
+        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
+        raise SystemExit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        logger.error(f"Judge start failed: {e}")
+        click.echo(json.dumps({"success": False, "error": str(e)}))
+        raise SystemExit(1)
+
+    
+@cli.command("judge")
+@click.option("--prompt-file", required=True, help="Path to the file with prompts that are valid URLs.")
+@click.option("--image-dir-1", required=True, help="Path to the directory containing the first set of images.")
+@click.option("--image-dir-2", required=True, help="Path to the directory containing the second set of images.")
+@click.option("--endpoint", required=True, help="Judge endpoint URL.")
+@click.option("--seed", required=True, help="Seed for generation.")
+@click.option("--output-file", default="duels.json", help="Path to the JSON file where duel results will be saved (default: duels.json).")
+def judge_cmd(
+    prompt_file: str,
+    image_dir_1: str,
+    image_dir_2: str,
+    endpoint: str,
+    seed: str,
+    output_file: str,
+) -> None:
+    """Judge the two sets of images using the judge endpoint."""
+    click.echo(f"Judging {prompt_file} with endpoint {endpoint}", err=True)
+    try:
+        judge = Judge(
+            model=_JUDGE_MODEL,
+            endpoint=f"{endpoint}/v1",
+            seed=int(seed),
+            temperature=0.0,
+            max_tokens=1024,
+            timeout=30.0,
+        )
+        asyncio.run(judge.judge(Path(prompt_file), Path(image_dir_1), Path(image_dir_2), Path(output_file)))
+        click.echo(json.dumps({"success": True, "output_file": output_file}))
+    except KeyboardInterrupt:
+        logger.warning("Judge interrupted by user")
+        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
+        raise SystemExit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        logger.error(f"Judge failed: {e}")
+        click.echo(json.dumps({"success": False, "error": str(e)}))
+        raise SystemExit(1)
+    finally:
+        click.echo(json.dumps({"success": True}))
 
 @cli.command("stop-pods")
 @click.option("--targon-api-key", required=True, help="Targon API key.")
@@ -342,7 +423,8 @@ async def _create_container(
     port: int,
     health_check_path: str,
     echo: Callable[[str], None],
-) -> None:
+    args: list[str] | None = None,
+) -> str:
     """
     Create and deploy a container on Targon.
 
@@ -359,7 +441,6 @@ async def _create_container(
         RuntimeError: If container deployment fails
         KeyboardInterrupt: If interrupted by user
     """
-    from targon.client.serverless import ServerlessResourceListItem
 
     container: ServerlessResourceListItem | None = None
     try:
@@ -370,6 +451,7 @@ async def _create_container(
                 resource_name=resource_name,
                 port=port,
                 container_concurrency=1,
+                args=args,
             )
             container = await ensure_running_container(
                 client=targon,
@@ -381,6 +463,7 @@ async def _create_container(
             if container:
                 echo(f"Container deployed successfully. UID: {container.uid}")
                 echo(f"Container URL: {container.url}")
+                return container.url
             else:
                 raise RuntimeError("Failed to deploy and start container")
     except (KeyboardInterrupt, asyncio.CancelledError):

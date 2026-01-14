@@ -209,4 +209,5 @@ __marimo__/
 
 prompts.txt
 results/
-images/
+images*/
+duels.json

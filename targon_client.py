@@ -26,6 +26,7 @@ class ContainerDeployConfig(BaseModel):
     container_concurrency: int
     resource_name: str = "h200-small"
     port: int = 10006
+    args: list[str] | None = None
 
 
 class TargonClient:
@@ -85,6 +86,7 @@ class TargonClient:
             name=name,
             container=TargonContainerConfig(
                 image=config.image,
+                args=config.args,
             ),
             resource_name=config.resource_name,
             network=NetworkConfig(
