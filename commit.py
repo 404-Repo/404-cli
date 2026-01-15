@@ -74,9 +74,9 @@ def commit_repo_cmd(
     )
 
 
-@cli.command("commit-ply-storage")
+@cli.command("commit-cdn-url")
 @click.option(
-    "--s3-url", 
+    "--cdn-url", 
     required=True, 
     help="URL of the S3 compatible object storage that saves the generated PLY files"
 )
@@ -87,8 +87,8 @@ def commit_repo_cmd(
 @click.option("--wallet.name", "wallet_name", required=True)
 @click.option("--wallet.hotkey", "wallet_hotkey", required=True)
 @click.option("--wallet.path", "wallet_path", default=None)
-def commit_ply_storage_cmd(
-    s3_url: str,
+def commit_cdn_url_cmd(
+    cdn_url: str,
     netuid: int,
     subtensor_endpoint: str,
     wallet_name: str,
@@ -97,13 +97,13 @@ def commit_ply_storage_cmd(
 ) -> None:
     """Commit PLY file storage on-chain."""
     try:
-        response = requests.head(s3_url, timeout=10)
+        response = requests.head(cdn_url, timeout=10)
         if not response.ok:
             click.echo(
                 json.dumps(
                     {
                         "success": False, 
-                        "error": f"S3 URL {s3_url} is not accessible: {response.status_code}"
+                        "error": f"CDN URL {cdn_url} is not accessible: {response.status_code}"
                     }
                 )
             )
@@ -113,14 +113,14 @@ def commit_ply_storage_cmd(
             json.dumps(
                 {
                     "success": False, 
-                    "error": f"S3 URL {s3_url} is not accessible: {str(e)}"
+                    "error": f"CDN URL {cdn_url} is not accessible: {str(e)}"
                 }
             )
         )
         raise SystemExit(1)
     
     _run_commit(
-        data={"cdn_url": s3_url},
+        data={"cdn_url": cdn_url},
         netuid=netuid,
         subtensor_endpoint=subtensor_endpoint,
         wallet_name=wallet_name,

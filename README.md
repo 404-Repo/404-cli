@@ -25,6 +25,14 @@ python commit.py commit-repo \
   --wallet.hotkey <hotkey>
 ```
 
+### Commit CDN URL for PLY file storage
+```bash
+python commit.py commit-cdn-url \
+  --cdn-url <s3-compatible-storage-url> \
+  --wallet.name <wallet> \
+  --wallet.hotkey <hotkey>
+```
+
 ### List all commitments
 ```bash
 python commit.py list-all
