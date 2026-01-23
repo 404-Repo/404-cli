@@ -17,13 +17,41 @@ python commit.py commit-hash \
   --wallet.hotkey <hotkey>
 ```
 
-### Commit repository reference of your solution
+### Commit repository reference and CDN URL
 ```bash
-python commit.py commit-repo \
+python commit.py commit-repo-cdn \
   --repo <owner/repo-name> \
+  --cdn-url <s3-compatible-storage-url> \
   --wallet.name <wallet> \
   --wallet.hotkey <hotkey>
 ```
+
+The `commit-repo-cdn` command commits both the repository reference and CDN URL in a single transaction. Before committing, it validates that the CDN URL is accessible by performing a HEAD request.
+
+**Example:**
+```bash
+python commit.py commit-repo-cdn \
+  --repo your-username/your-solution \
+  --cdn-url https://my-bucket.s3.amazonaws.com/models/ \
+  --wallet.name miner \
+  --wallet.hotkey default
+```
+
+**Output:**
+On success, outputs JSON:
+```json
+{"success": true, "repo": "your-username/your-solution", "cdn_url": "https://my-bucket.s3.amazonaws.com/models/"}
+```
+
+On failure (if CDN URL is not accessible), outputs error JSON:
+```json
+{"success": false, "error": "CDN URL https://my-bucket.s3.amazonaws.com/models/ is not accessible: 404"}
+```
+
+**Notes:**
+- Both `--repo` and `--cdn-url` are required
+- The command validates CDN URL accessibility before committing
+- Uses the same wallet and network options as other commit commands
 
 ### List all commitments
 ```bash
@@ -72,9 +100,10 @@ python commit.py commit-hash \
 
 # 3. Make your repo accessible to validators
 
-# 4. Submit the repo reference
-python commit.py commit-repo \
+# 4. Submit the repo reference and CDN URL
+python commit.py commit-repo-cdn \
   --repo your-username/your-solution \
+  --cdn-url https://my-bucket.s3.amazonaws.com/models/ \
   --wallet.name miner \
   --wallet.hotkey default
 ```

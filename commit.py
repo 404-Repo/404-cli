@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Callable
+import requests
 
 import bittensor as bt
 import click
@@ -13,6 +14,7 @@ from generator import Generator
 from renderer import Renderer
 from targon.client.serverless import ServerlessResourceListItem
 from judge import Judge
+from models import State, Schedule
 
 
 _GENERATOR_POD_NAME: str = "generator"
@@ -34,6 +36,7 @@ _JUDGE_ARGS: list[str] = [
     "--max-num-seqs", "4",
 ]
 _JUDGE_MODEL: str = "zai-org/GLM-4.1V-9B-Thinking"
+_GITHUB_URL: str = "https://raw.githubusercontent.com/404-Repo/404-competition-0/main"
 
 
 @click.group()
@@ -44,6 +47,50 @@ def cli(verbose: int) -> None:
     levels = {0: "WARNING", 1: "INFO", 2: "DEBUG"}
     logger.remove()
     logger.add(sys.stderr, level=levels.get(verbose, "TRACE"))
+
+
+def _fetch_state() -> State:
+    """Download and parse state.json from GitHub."""
+    state_url = f"{_GITHUB_URL}/state.json"
+    try:
+        response = requests.get(state_url, timeout=10)
+        response.raise_for_status()
+        # response.json() already returns a dict; use model_validate for dict input
+        return State.model_validate(response.json())
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch state.json: {e}")
+        raise RuntimeError(f"Failed to fetch state.json from {state_url}: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse state.json: {e}")
+        raise RuntimeError(f"Failed to parse state.json: {str(e)}")
+
+
+def _fetch_schedule(round_number: int) -> Schedule:
+    """Download and parse schedule.json from GitHub for a specific round."""
+    schedule_url = f"{_GITHUB_URL}/rounds/{round_number}/schedule.json"
+    try:
+        response = requests.get(schedule_url, timeout=10)
+        response.raise_for_status()
+        return Schedule.model_validate(response.json())
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch schedule.json for round {round_number}: {e}")
+        raise RuntimeError(f"Failed to fetch schedule.json from {schedule_url}: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse schedule.json for round {round_number}: {e}")
+        raise RuntimeError(f"Failed to parse schedule.json: {str(e)}")
+
+
+async def _fetch_and_parse_commitments(
+    subtensor_endpoint: str,
+    netuid: int,
+    round_number: int,
+    schedule: Schedule,
+    current_round: int,
+) -> dict[str, dict]:
+    """Fetch commitments from subtensor and parse them for a specific round."""
+    async with bt.async_subtensor(subtensor_endpoint) as subtensor:
+        raw_commitments = await subtensor.get_all_revealed_commitments(netuid=netuid)
+        return _parse_commitments(raw_commitments, round_number, schedule, current_round)
 
 
 @cli.command("commit-hash")
@@ -64,6 +111,35 @@ def commit_hash_cmd(
     wallet_path: str | None,
 ) -> None:
     """Commit HF revision hash on-chain."""
+    try: 
+        state = _fetch_state()
+    except Exception as e:
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch state: {str(e)}"}))
+        raise SystemExit(1)
+
+    try:
+        schedule = _fetch_schedule(state.current_round)
+    except Exception as e:
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch schedule: {str(e)}"}))
+        raise SystemExit(1)
+    round_to_commit = state.current_round if state.stage == "collecting" else state.current_round + 1
+    try:
+        commitments = asyncio.run(
+            _fetch_and_parse_commitments(
+                subtensor_endpoint=subtensor_endpoint,
+                netuid=netuid,
+                round_number=round_to_commit,
+                schedule=schedule,
+                current_round=state.current_round,
+            )
+        )
+        if wallet_hotkey not in commitments:
+            click.echo(f"WARNING: You have not commited repo and cdn_url for round {round_to_commit}.", err=True)
+        elif not commitments[wallet_hotkey]["repo"] or not commitments[wallet_hotkey]["cdn_url"]:
+            click.echo(f"WARNING: You have not commited repo and cdn_url for round {round_to_commit}.", err=True)
+    except Exception as e:
+        click.echo(f"WARNING: Failed to fetch information about your commitments in round {round_to_commit}: {str(e)}", err=True)
+        
     _run_commit(
         data={"commit": commit_hash},
         netuid=netuid,
@@ -71,11 +147,17 @@ def commit_hash_cmd(
         wallet_name=wallet_name,
         wallet_hotkey=wallet_hotkey,
         wallet_path=wallet_path,
+        state=state,
     )
 
 
-@cli.command("commit-repo")
+@cli.command("commit-repo-cdn")
 @click.option("--repo", required=True, help="HF repo id (e.g. user/repo)")
+@click.option(
+    "--cdn-url", 
+    required=True, 
+    help="URL of the S3 compatible object storage that saves the generated PLY files"
+)
 @click.option("--netuid", default=17, show_default=True)
 @click.option(
     "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
@@ -83,22 +165,63 @@ def commit_hash_cmd(
 @click.option("--wallet.name", "wallet_name", required=True)
 @click.option("--wallet.hotkey", "wallet_hotkey", required=True)
 @click.option("--wallet.path", "wallet_path", default=None)
-def commit_repo_cmd(
+def commit_repo_cdn_cmd(
     repo: str,
+    cdn_url: str,
     netuid: int,
     subtensor_endpoint: str,
     wallet_name: str,
     wallet_hotkey: str,
     wallet_path: str | None,
 ) -> None:
-    """Commit HF repo on-chain."""
+    """Commit HF repo and CDN URL on-chain."""    
+    # Validate CDN URL accessibility
+    try:
+        response = requests.head(cdn_url, timeout=10)
+        if not response.ok:
+            click.echo(json.dumps({"success": False, "error": f"CDN URL {cdn_url} is not accessible: {response.status_code}"}))
+            raise SystemExit(1)
+    except requests.RequestException as e:
+        click.echo(json.dumps({"success": False, "error": f"CDN URL {cdn_url} is not accessible: {str(e)}"}))
+        raise SystemExit(1)    
+
+    try: 
+        state = _fetch_state()
+    except Exception as e:
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch state: {str(e)}"}))
+        raise SystemExit(1)
+
+    try:
+        schedule = _fetch_schedule(state.current_round)
+    except Exception as e:
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch schedule: {str(e)}"}))
+        raise SystemExit(1)
+    round_to_commit = state.current_round if state.stage == "collecting" else state.current_round + 1
+    try:
+        commitments = asyncio.run(
+            _fetch_and_parse_commitments(
+                subtensor_endpoint=subtensor_endpoint,
+                netuid=netuid,
+                round_number=round_to_commit,
+                schedule=schedule,
+                current_round=state.current_round,
+            )
+        )
+        if wallet_hotkey not in commitments:
+            click.echo(f"WARNING: You have not commited hash for round {round_to_commit}.", err=True)
+        elif not commitments[wallet_hotkey]["commit_hash"]:
+            click.echo(f"WARNING: You have not commited hash for round {round_to_commit}.", err=True)
+    except Exception as e:
+        click.echo(f"WARNING: Failed to fetch information about your commitments in round {round_to_commit}: {str(e)}", err=True)
+
     _run_commit(
-        data={"repo": repo},
+        data={"repo": repo, "cdn_url": cdn_url},
         netuid=netuid,
         subtensor_endpoint=subtensor_endpoint,
         wallet_name=wallet_name,
         wallet_hotkey=wallet_hotkey,
         wallet_path=wallet_path,
+        state=state,
     )
 
 
@@ -110,6 +233,7 @@ def _run_commit(
     wallet_name: str,
     wallet_hotkey: str,
     wallet_path: str | None,
+    state: State,
 ) -> None:
     wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
     logger.info(f"Committing {data} with wallet {wallet_name}@{wallet_hotkey}")
@@ -123,13 +247,16 @@ def _run_commit(
                 data=payload,
                 blocks_until_reveal=2,
             )
+            click.echo(json.dumps({"success": True, "state": state.model_dump()}))
             if success:
-                logger.info(f"Committed at block {block}")
+                click.echo(f"Committed at block {block}")
             else:
                 raise RuntimeError(f"Commitment failed at block {block}")
 
     try:
         asyncio.run(_commit())
+        round = state.current_round if state.stage == "collecting" else state.current_round + 1
+        data["round"] = round
         click.echo(json.dumps({"success": True, **data}))
     except Exception as e:
         logger.error(f"Commit failed: {e}")
@@ -144,26 +271,60 @@ def _run_commit(
 )
 def list_all_cmd(netuid: int, subtensor_endpoint: str) -> None:
     """List all revealed commitments."""
+    # Ask user for round number interactively
+    round_number: int = click.prompt("Enter round number", type=int)
+    logger.info(f"Listing commitments for round {round_number}")
 
-    async def _list() -> list[dict]:
+    # Case of the next round while current round is in progress should be handled here too.
+    try:
+        state = _fetch_state()
+        current_round = state.current_round
+        if round_number > current_round + 1:
+            click.echo(json.dumps({"success": False, "error": f"Round {round_number} is not yet revealed. Next round is {current_round + 1}."}))
+            raise SystemExit(1)
+    except Exception as e:
+        logger.error(f"Failed to fetch state: {e}")
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch state: {str(e)}"}))
+        raise SystemExit(1)
+    
+    # Fetch schedule for the round.
+    # If the round is the next round while current round is in progress, fetch the schedule for the current round.
+    try:
+        round_to_fetch = round_number if round_number <= current_round else current_round
+        schedule = _fetch_schedule(round_to_fetch)
+    except Exception as e:
+        logger.error(f"Failed to fetch schedule: {e}")
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch schedule: {str(e)}"}))
+        raise SystemExit(1)
+
+    async def _list(round_number: int, schedule: Schedule, current_round: int) -> list[dict]:
         async with bt.async_subtensor(subtensor_endpoint) as subtensor:
             commitments = await subtensor.get_all_revealed_commitments(netuid=netuid)
-            return _parse_commitments(commitments)
+            commitments_dict = _parse_commitments(commitments, round_number, schedule, current_round)
+            results_list = list(commitments_dict.values())
+            results_list.sort(key=lambda x: x["commit_block"])
+            return results_list
 
-    results = asyncio.run(_list())
+    results = asyncio.run(_list(round_number, schedule, current_round))
     for entry in results:
         click.echo(json.dumps(entry))
 
 
-def _parse_commitments(commitments: dict) -> list[dict]:
+def _parse_commitments(commitments: dict, round_number: int, schedule: Schedule, current_round: int) -> dict[str, dict]:
     """Extract latest commit and repo for each hotkey, sorted by commit block."""
-    results = []
+    results: dict[str, dict] = {}
 
     for hotkey, entries in commitments.items():
         latest_commit: tuple[int, str] | None = None
         latest_repo: tuple[int, str] | None = None
+        latest_cdn_url: tuple[int, str] | None = None
 
         for block, data in entries:
+            if round_number == current_round + 1 and block <= schedule.latest_reveal_block:
+                continue
+            if round_number <= current_round and (block < schedule.earliest_reveal_block or block > schedule.latest_reveal_block):
+                continue
+            
             try:
                 parsed = json.loads(data)
             except json.JSONDecodeError:
@@ -177,20 +338,23 @@ def _parse_commitments(commitments: dict) -> list[dict]:
                 if latest_repo is None or block > latest_repo[0]:
                     latest_repo = (block, repo)
 
+            if cdn_url := parsed.get("cdn_url"):
+                if latest_cdn_url is None or block > latest_cdn_url[0]:
+                    latest_cdn_url = (block, cdn_url)
+
         if latest_commit is None:
             continue
 
-        results.append(
-            {
-                "hotkey": hotkey,
-                "commit_hash": latest_commit[1],
-                "commit_block": latest_commit[0],
-                "repo": latest_repo[1] if latest_repo else None,
-                "repo_block": latest_repo[0] if latest_repo else None,
-            }
-        )
+        results[hotkey] = {
+            "hotkey": hotkey,
+            "commit_hash": latest_commit[1],
+            "commit_block": latest_commit[0],
+            "repo": latest_repo[1] if latest_repo else None,
+            "repo_block": latest_repo[0] if latest_repo else None,
+            "cdn_url": latest_cdn_url[1] if latest_cdn_url else None,
+            "cdn_block": latest_cdn_url[0] if latest_cdn_url else None,
+        }
 
-    results.sort(key=lambda x: x["commit_block"])
     return results
 
 
