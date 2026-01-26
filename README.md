@@ -3,6 +3,26 @@
 Command line tool for the 404 subnet to submit miner solutions.
 
 ## Installation
+
+### Option 1: Install as a CLI tool (Recommended)
+
+Install the package in editable mode to use the `404-cli` command directly:
+
+```bash
+pip install -e .
+```
+
+After installation, you can use `404-cli` directly without `python`:
+
+```bash
+404-cli --help
+404-cli commit-hash --hash <hash> --wallet.name <name> --wallet.hotkey <hotkey>
+```
+
+### Option 2: Install dependencies only
+
+If you prefer to use `python commit.py` instead:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -11,6 +31,14 @@ pip install -r requirements.txt
 
 ### Commit hash of your solution
 ```bash
+404-cli commit-hash \
+  --hash <full_40_char_commit_sha> \
+  --wallet.name <wallet> \
+  --wallet.hotkey <hotkey>
+```
+
+Or using `python commit.py`:
+```bash
 python commit.py commit-hash \
   --hash <full_40_char_commit_sha> \
   --wallet.name <wallet> \
@@ -18,6 +46,15 @@ python commit.py commit-hash \
 ```
 
 ### Commit repository reference and CDN URL
+```bash
+404-cli commit-repo-cdn \
+  --repo <owner/repo-name> \
+  --cdn-url <s3-compatible-storage-url> \
+  --wallet.name <wallet> \
+  --wallet.hotkey <hotkey>
+```
+
+Or using `python commit.py`:
 ```bash
 python commit.py commit-repo-cdn \
   --repo <owner/repo-name> \
@@ -30,7 +67,7 @@ The `commit-repo-cdn` command commits both the repository reference and CDN URL 
 
 **Example:**
 ```bash
-python commit.py commit-repo-cdn \
+404-cli commit-repo-cdn \
   --repo your-username/your-solution \
   --cdn-url https://my-bucket.s3.amazonaws.com/models/ \
   --wallet.name miner \
@@ -54,6 +91,11 @@ On failure (if CDN URL is not accessible), outputs error JSON:
 - Uses the same wallet and network options as other commit commands
 
 ### List all commitments
+```bash
+404-cli list-all
+```
+
+Or using `python commit.py`:
 ```bash
 python commit.py list-all
 ```
@@ -93,7 +135,7 @@ git log --format="%H" -1
 # → a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 ← full 40-char SHA
 
 # 2. Submit the hash to claim your timestamp
-python commit.py commit-hash \
+404-cli commit-hash \
   --hash a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0 \
   --wallet.name miner \
   --wallet.hotkey default
@@ -101,7 +143,7 @@ python commit.py commit-hash \
 # 3. Make your repo accessible to validators
 
 # 4. Submit the repo reference and CDN URL
-python commit.py commit-repo-cdn \
+404-cli commit-repo-cdn \
   --repo your-username/your-solution \
   --cdn-url https://my-bucket.s3.amazonaws.com/models/ \
   --wallet.name miner \
@@ -130,7 +172,7 @@ The `start-generator` command deploys and starts a generator container on Targon
 
 **Example:**
 ```bash
-python commit.py start-generator \
+404-cli start-generator \
   --image-url docker.io/username/model-generator:v1.0.0 \
   --targon-api-key your-targon-api-key-here
 ```
@@ -161,7 +203,7 @@ The `generate` command processes a list of prompt images and generates 3D models
 
 First, start the generator container:
 ```bash
-python commit.py start-generator \
+404-cli start-generator \
   --image-url docker.io/username/model-generator:v1.0.0 \
   --targon-api-key your-targon-api-key-here
 ```
@@ -172,7 +214,7 @@ Then, create a file `prompts.txt` with image URLs.
 
 Run the generate command:
 ```bash
-python commit.py generate \
+404-cli generate \
   --prompts-file prompts.txt \
   --endpoint https://generator-abc123.targon.io \
   --seed 42 \
@@ -210,7 +252,7 @@ The `start-renderer` command deploys and starts a renderer container on Targon. 
 
 **Example:**
 ```bash
-python commit.py start-renderer \
+404-cli start-renderer \
   --targon-api-key your-targon-api-key-here
 ```
 
@@ -243,7 +285,7 @@ The `render` command processes .ply files and renders them to PNG images using a
 
 First, start the renderer container:
 ```bash
-python commit.py start-renderer \
+404-cli start-renderer \
   --targon-api-key your-targon-api-key-here
 ```
 
@@ -251,7 +293,7 @@ Note the container URL from the output (e.g., `https://render-abc123.targon.io`)
 
 Then, render the .ply files:
 ```bash
-python commit.py render \
+404-cli render \
   --data-dir results \
   --endpoint https://render-abc123.targon.io \
   --output-dir images
@@ -288,7 +330,7 @@ The `stop-pods` command stops all running generator, render, and judge container
 
 **Example:**
 ```bash
-python commit.py stop-pods \
+404-cli stop-pods \
   --targon-api-key your-targon-api-key-here
 ```
 
@@ -308,7 +350,7 @@ The `start-judge` command deploys and starts a judge container on Targon. It dep
 
 **Example:**
 ```bash
-python commit.py start-judge \
+404-cli start-judge \
   --targon-api-key your-targon-api-key-here
 ```
 
@@ -349,7 +391,7 @@ The `judge` command evaluates two sets of rendered 3D model images against their
 
 First, start the judge container:
 ```bash
-python commit.py start-judge \
+404-cli start-judge \
   --targon-api-key your-targon-api-key-here
 ```
 
@@ -365,7 +407,7 @@ Ensure you have rendered images in two directories (e.g., `images` and `images_2
 
 Run the judge command:
 ```bash
-python commit.py judge \
+404-cli judge \
   --prompt-file prompts.txt \
   --image-dir-1 images \
   --image-dir-2 images_2 \

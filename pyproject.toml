@@ -1,0 +1,28 @@
+[project]
+name = "404-gen-commit"
+version = "0.1.0"
+description = "Command line tool for the 404 subnet to submit miner solutions"
+requires-python = ">=3.8"
+dependencies = [
+    "loguru==0.7.3",
+    "bittensor==9.12.2",
+    "bittensor-wallet==4.0.1",
+    "click==8.3.1",
+    "pydantic==2.12.4",
+    "pydantic-settings==2.12.0",
+    "targon-sdk @ git+https://github.com/manifold-inc/targon-sdk.git@main",
+    "httpx==0.28.1",
+    "openai==2.9.0",
+    "pybase64==1.4.3",
+    "requests==2.32.5",
+]
+
+[project.scripts]
+404-cli = "commit:cli"
+
+[tool.setuptools]
+py-modules = ["commit", "generator", "renderer", "judge", "models", "targon_client", "targon_utils"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
