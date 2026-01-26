@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Callable
 import requests
 
-import bittensor as bt
 import click
 from loguru import logger
 from targon_client import TargonClient, ContainerDeployConfig
@@ -88,6 +87,7 @@ async def _fetch_and_parse_commitments(
     current_round: int,
 ) -> dict[str, dict]:
     """Fetch commitments from subtensor and parse them for a specific round."""
+    import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
     async with bt.async_subtensor(subtensor_endpoint) as subtensor:
         raw_commitments = await subtensor.get_all_revealed_commitments(netuid=netuid)
         return _parse_commitments(raw_commitments, round_number, schedule, current_round)
@@ -99,9 +99,9 @@ async def _fetch_and_parse_commitments(
 @click.option(
     "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
 )
-@click.option("--wallet.name", "wallet_name", required=True)
-@click.option("--wallet.hotkey", "wallet_hotkey", required=True)
-@click.option("--wallet.path", "wallet_path", default=None)
+@click.option("--wallet.name", "wallet_name", required=True, help="Name of the bittensor wallet to use")
+@click.option("--wallet.hotkey", "wallet_hotkey", required=True, help="Hotkey name of the wallet")
+@click.option("--wallet.path", "wallet_path", default=None, help="Path to the wallet directory (default: ~/.bittensor)")
 def commit_hash_cmd(
     commit_hash: str,
     netuid: int,
@@ -133,9 +133,12 @@ def commit_hash_cmd(
                 current_round=state.current_round,
             )
         )
-        if wallet_hotkey not in commitments:
+        import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
+        wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
+        hotkey = wallet.hotkey.ss58_address
+        if hotkey not in commitments:
             click.echo(f"WARNING: You have not commited repo and cdn_url for round {round_to_commit}.", err=True)
-        elif not commitments[wallet_hotkey]["repo"] or not commitments[wallet_hotkey]["cdn_url"]:
+        elif not commitments[hotkey]["repo"] or not commitments[hotkey]["cdn_url"]:
             click.echo(f"WARNING: You have not commited repo and cdn_url for round {round_to_commit}.", err=True)
     except Exception as e:
         click.echo(f"WARNING: Failed to fetch information about your commitments in round {round_to_commit}: {str(e)}", err=True)
@@ -162,9 +165,9 @@ def commit_hash_cmd(
 @click.option(
     "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
 )
-@click.option("--wallet.name", "wallet_name", required=True)
-@click.option("--wallet.hotkey", "wallet_hotkey", required=True)
-@click.option("--wallet.path", "wallet_path", default=None)
+@click.option("--wallet.name", "wallet_name", required=True, help="Name of the bittensor wallet to use")
+@click.option("--wallet.hotkey", "wallet_hotkey", required=True, help="Hotkey name of the wallet")
+@click.option("--wallet.path", "wallet_path", default=None, help="Path to the wallet directory (default: ~/.bittensor)")
 def commit_repo_cdn_cmd(
     repo: str,
     cdn_url: str,
@@ -207,12 +210,20 @@ def commit_repo_cdn_cmd(
                 current_round=state.current_round,
             )
         )
-        if wallet_hotkey not in commitments:
-            click.echo(f"WARNING: You have not commited hash for round {round_to_commit}.", err=True)
-        elif not commitments[wallet_hotkey]["commit_hash"]:
-            click.echo(f"WARNING: You have not commited hash for round {round_to_commit}.", err=True)
+        import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
+        wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
+        hotkey = wallet.hotkey.ss58_address
+        if hotkey not in commitments:
+            click.echo(json.dumps({"success": False, "error": f"You have not committed hash for round {round_to_commit}. Please commit hash first."}))
+            raise SystemExit(1)
+        elif not commitments[hotkey]["commit_hash"]:
+            click.echo(json.dumps({"success": False, "error": f"You have not committed hash for round {round_to_commit}. Please commit hash first."}))
+            raise SystemExit(1)
+    except SystemExit:
+        raise
     except Exception as e:
-        click.echo(f"WARNING: Failed to fetch information about your commitments in round {round_to_commit}: {str(e)}", err=True)
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch information about your commitments in round {round_to_commit}: {str(e)}"}))
+        raise SystemExit(1)
 
     _run_commit(
         data={"repo": repo, "cdn_url": cdn_url},
@@ -235,6 +246,7 @@ def _run_commit(
     wallet_path: str | None,
     state: State,
 ) -> None:
+    import bittensor as bt # Bittensor import should be here because bittensor captures --help command otherwise
     wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
     logger.info(f"Committing {data} with wallet {wallet_name}@{wallet_hotkey}")
 
@@ -247,7 +259,6 @@ def _run_commit(
                 data=payload,
                 blocks_until_reveal=2,
             )
-            click.echo(json.dumps({"success": True, "state": state.model_dump()}))
             if success:
                 click.echo(f"Committed at block {block}")
             else:
@@ -298,6 +309,7 @@ def list_all_cmd(netuid: int, subtensor_endpoint: str) -> None:
         raise SystemExit(1)
 
     async def _list(round_number: int, schedule: Schedule, current_round: int) -> list[dict]:
+        import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
         async with bt.async_subtensor(subtensor_endpoint) as subtensor:
             commitments = await subtensor.get_all_revealed_commitments(netuid=netuid)
             commitments_dict = _parse_commitments(commitments, round_number, schedule, current_round)
