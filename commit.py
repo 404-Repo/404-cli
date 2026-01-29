@@ -177,17 +177,7 @@ def commit_repo_cdn_cmd(
     wallet_hotkey: str,
     wallet_path: str | None,
 ) -> None:
-    """Commit repo and CDN URL on-chain."""    
-    # Validate CDN URL accessibility
-    try:
-        response = requests.head(cdn_url, timeout=10)
-        if not response.ok:
-            click.echo(json.dumps({"success": False, "error": f"CDN URL {cdn_url} is not accessible: {response.status_code}"}))
-            raise SystemExit(1)
-    except requests.RequestException as e:
-        click.echo(json.dumps({"success": False, "error": f"CDN URL {cdn_url} is not accessible: {str(e)}"}))
-        raise SystemExit(1)    
-
+    """Commit repo and CDN URL on-chain."""
     try: 
         state = _fetch_state()
     except Exception as e:
