@@ -134,7 +134,7 @@ def commit_hash_cmd(
             )
         )
         import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
-        wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
+        wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
         hotkey = wallet.hotkey.ss58_address
         if hotkey not in commitments:
             click.echo(f"WARNING: You have not commited repo and cdn_url for round {round_to_commit}.", err=True)
@@ -211,7 +211,7 @@ def commit_repo_cdn_cmd(
             )
         )
         import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
-        wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey)
+        wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
         hotkey = wallet.hotkey.ss58_address
         if hotkey not in commitments:
             click.echo(json.dumps({"success": False, "error": f"You have not committed hash for round {round_to_commit}. Please commit hash first."}))
