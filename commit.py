@@ -110,7 +110,7 @@ def commit_hash_cmd(
     wallet_hotkey: str,
     wallet_path: str | None,
 ) -> None:
-    """Commit HF revision hash on-chain."""
+    """Commit revision hash on-chain."""
     try: 
         state = _fetch_state()
     except Exception as e:
@@ -177,7 +177,7 @@ def commit_repo_cdn_cmd(
     wallet_hotkey: str,
     wallet_path: str | None,
 ) -> None:
-    """Commit HF repo and CDN URL on-chain."""    
+    """Commit repo and CDN URL on-chain."""    
     # Validate CDN URL accessibility
     try:
         response = requests.head(cdn_url, timeout=10)
