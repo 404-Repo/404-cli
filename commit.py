@@ -162,6 +162,7 @@ def commit_hash_cmd(
         wallet_hotkey=wallet_hotkey,
         wallet_path=wallet_path,
         state=state,
+        current_round=round_to_commit,
     )
 
 
@@ -245,6 +246,7 @@ def commit_repo_cdn_cmd(
         wallet_hotkey=wallet_hotkey,
         wallet_path=wallet_path,
         state=state,
+        current_round=round_to_commit,
     )
 
 
@@ -257,6 +259,7 @@ def _run_commit(
     wallet_hotkey: str,
     wallet_path: str | None,
     state: State,
+    current_round: int,
 ) -> None:
     import bittensor as bt # Bittensor import should be here because bittensor captures --help command otherwise
     wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
@@ -278,8 +281,7 @@ def _run_commit(
 
     try:
         asyncio.run(_commit())
-        round = state.current_round if state.stage == "collecting" else state.current_round + 1
-        data["round"] = round
+        data["round"] = current_round
         click.echo(json.dumps({"success": True, **data}))
     except Exception as e:
         logger.error(f"Commit failed: {e}")
