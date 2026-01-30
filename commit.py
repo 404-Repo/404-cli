@@ -1,8 +1,10 @@
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 import requests
 
 import click
@@ -77,6 +79,24 @@ def _fetch_schedule(round_number: int) -> Schedule:
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse schedule.json for round {round_number}: {e}")
         raise RuntimeError(f"Failed to parse schedule.json: {str(e)}")
+
+
+def _validate_repo_format(repo: str) -> bool:
+    """Validate that repo is in the format 'user/repo'."""
+    # Single regex pattern with two groups: user and repo
+    # Pattern: alphanumeric, hyphens, underscores, dots allowed
+    pattern = r'([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)'
+    return bool(re.fullmatch(pattern, repo))
+
+
+def _validate_cdn_url_format(cdn_url: str) -> bool:
+    """Validate that cdn_url is a valid URL format with http:// or https:// scheme."""
+    try:
+        result = urlparse(cdn_url)
+        # Must have http or https scheme and a netloc (domain)
+        return bool(result.scheme in ('http', 'https') and result.netloc)
+    except Exception:
+        return False
 
 
 async def _fetch_and_parse_commitments(
@@ -167,11 +187,11 @@ def commit_hash_cmd(
 
 
 @cli.command("commit-repo-cdn")
-@click.option("--repo", required=True, help="HF repo id (e.g. user/repo)")
+@click.option("--repo", required=True, help="Git repository in format 'user/repo' (e.g. mokabetrade/ansible-foundry)")
 @click.option(
     "--cdn-url", 
     required=True, 
-    help="URL of the S3 compatible object storage that saves the generated PLY files"
+    help="URL of the S3 compatible object storage that saves the generated PLY files. Must be a valid URL with scheme (http:// or https://)"
 )
 @click.option("--netuid", default=17, show_default=True)
 @click.option(
@@ -191,8 +211,17 @@ def commit_repo_cdn_cmd(
 ) -> None:
     """Commit repo and CDN URL on-chain."""
     import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
-        
-    try: 
+    
+    if not _validate_repo_format(repo):
+        click.echo(json.dumps({"success": False, "error": f"Invalid git repository format: {repo}. Expected format: 'user/repo' (e.g. 'mokabetrade/ansible-foundry')"}))
+        raise SystemExit(1)
+    
+    # Validate CDN URL format
+    if not _validate_cdn_url_format(cdn_url):
+        click.echo(json.dumps({"success": False, "error": f"Invalid CDN URL format: {cdn_url}. Expected a valid URL with scheme (http:// or https://)"}))
+        raise SystemExit(1)
+    
+    try:
         state = _fetch_state()
     except Exception as e:
         click.echo(json.dumps({"success": False, "error": f"Failed to fetch state: {str(e)}"}))
