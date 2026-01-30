@@ -35,7 +35,7 @@ _JUDGE_ARGS: list[str] = [
     "--max-num-seqs", "4",
 ]
 _JUDGE_MODEL: str = "zai-org/GLM-4.1V-9B-Thinking"
-_GITHUB_URL: str = "https://raw.githubusercontent.com/404-Repo/404-competition-0/main"
+_GITHUB_URL: str = "https://raw.githubusercontent.com/404-Repo/404-active-competition/main"
 
 
 @click.group()
