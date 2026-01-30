@@ -8,5 +8,4 @@ targon-sdk @ git+https://github.com/manifold-inc/targon-sdk.git@main
 httpx==0.28.1
 openai==2.9.0
 pybase64==1.4.3
-requests==2.32.3
 requests==2.32.5
