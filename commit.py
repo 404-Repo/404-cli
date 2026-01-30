@@ -111,6 +111,8 @@ def commit_hash_cmd(
     wallet_path: str | None,
 ) -> None:
     """Commit revision hash on-chain."""
+    import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
+        
     try: 
         state = _fetch_state()
     except Exception as e:
@@ -122,7 +124,17 @@ def commit_hash_cmd(
     except Exception as e:
         click.echo(json.dumps({"success": False, "error": f"Failed to fetch schedule: {str(e)}"}))
         raise SystemExit(1)
-    round_to_commit = state.current_round if state.stage == "collecting" else state.current_round + 1
+
+    try:
+        current_block = asyncio.run(bt.async_subtensor(subtensor_endpoint).get_current_block())
+        if current_block < schedule.earliest_reveal_block:
+            click.echo(json.dumps({"success": False, "error": f"Current block {current_block} is before the earliest reveal block {schedule.earliest_reveal_block}"}))
+            raise SystemExit(1)
+    except Exception as e:
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch current block: {str(e)}"}))
+        raise SystemExit(1)
+
+    round_to_commit = state.current_round if current_block <= schedule.latest_reveal_block else state.current_round + 1
     try:
         commitments = asyncio.run(
             _fetch_and_parse_commitments(
@@ -133,7 +145,6 @@ def commit_hash_cmd(
                 current_round=state.current_round,
             )
         )
-        import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
         wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
         hotkey = wallet.hotkey.ss58_address
         if hotkey not in commitments:
@@ -178,6 +189,8 @@ def commit_repo_cdn_cmd(
     wallet_path: str | None,
 ) -> None:
     """Commit repo and CDN URL on-chain."""
+    import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
+        
     try: 
         state = _fetch_state()
     except Exception as e:
@@ -189,7 +202,17 @@ def commit_repo_cdn_cmd(
     except Exception as e:
         click.echo(json.dumps({"success": False, "error": f"Failed to fetch schedule: {str(e)}"}))
         raise SystemExit(1)
-    round_to_commit = state.current_round if state.stage == "collecting" else state.current_round + 1
+
+    try:
+        current_block = asyncio.run(bt.async_subtensor(subtensor_endpoint).get_current_block())
+        if current_block < schedule.earliest_reveal_block:
+            click.echo(json.dumps({"success": False, "error": f"Current block {current_block} is before the earliest reveal block {schedule.earliest_reveal_block}"}))
+            raise SystemExit(1)
+    except Exception as e:
+        click.echo(json.dumps({"success": False, "error": f"Failed to fetch current block: {str(e)}"}))
+        raise SystemExit(1)
+
+    round_to_commit = state.current_round if current_block <= schedule.latest_reveal_block else state.current_round + 1
     try:
         commitments = asyncio.run(
             _fetch_and_parse_commitments(
@@ -200,7 +223,6 @@ def commit_repo_cdn_cmd(
                 current_round=state.current_round,
             )
         )
-        import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
         wallet = bt.wallet(name=wallet_name, hotkey=wallet_hotkey, path=wallet_path)
         hotkey = wallet.hotkey.ss58_address
         if hotkey not in commitments:
