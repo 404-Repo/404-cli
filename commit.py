@@ -490,7 +490,8 @@ def _parse_commitments(commitments: dict, round_number: int, schedule: Schedule,
 @click.option("--image-url", required=True, help="URL of the generator image to start")
 @click.option("--targon-api-key", required=True, help="Targon API key")
 @click.option("--hf-token", "hf_token", default=None, help="HuggingFace token to pass as HF_TOKEN environment variable")
-def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | None) -> None:
+@click.option("--name", "container_name", default=None, help="Custom container name (default: generator)")
+def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | None, container_name: str | None) -> None:
     """Start the generator container."""
     click.echo(f"Starting generator: {image_url}", err=True)
     
@@ -499,10 +500,16 @@ def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | Non
         if hf_token:
             env = {"HF_TOKEN": hf_token}
         
+        # Format container name: "generator_{name}" if name provided, otherwise use default
+        if container_name:
+            name = f"generator_{container_name}"
+        else:
+            name = _GENERATOR_POD_NAME
+        
         container_url = asyncio.run(
             _create_container(
                 image_url=image_url,
-                container_name=_GENERATOR_POD_NAME,
+                container_name=name,
                 targon_api_key=targon_api_key,
                 resource_name="h200-small",
                 port=_GENERATOR_PORT,
@@ -648,7 +655,8 @@ def stop_pods_cmd(targon_api_key: str) -> None:
         async with TargonClient(api_key=targon_api_key) as targon:
             containers = await targon.list_containers()
             for c in containers:
-                if c.name in [_GENERATOR_POD_NAME, _RENDER_POD_NAME, _JUDGE_POD_NAME]:
+                # Stop all containers that start with "generator_", plus render and judge pods
+                if c.name.startswith("generator_") or c.name in [_RENDER_POD_NAME, _JUDGE_POD_NAME]:
                     click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
                     await targon.delete_container(c.uid)
     try:
