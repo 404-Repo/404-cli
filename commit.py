@@ -489,11 +489,16 @@ def _parse_commitments(commitments: dict, round_number: int, schedule: Schedule,
 @cli.command("start-generator")
 @click.option("--image-url", required=True, help="URL of the generator image to start")
 @click.option("--targon-api-key", required=True, help="Targon API key")
-def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
+@click.option("--hf-token", "hf_token", default=None, help="HuggingFace token to pass as HF_TOKEN environment variable")
+def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | None) -> None:
     """Start the generator container."""
     click.echo(f"Starting generator: {image_url}", err=True)
     
     try:
+        env = None
+        if hf_token:
+            env = {"HF_TOKEN": hf_token}
+        
         container_url = asyncio.run(
             _create_container(
                 image_url=image_url,
@@ -503,6 +508,7 @@ def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
                 port=_GENERATOR_PORT,
                 health_check_path=_GENERATOR_HEALTH_CHECK_PATH,
                 echo=lambda msg: click.echo(msg, err=True),
+                env=env,
             )
         )
         click.echo(json.dumps({"success": True, "container_url": container_url}))
@@ -716,6 +722,7 @@ async def _create_container(
     health_check_path: str,
     echo: Callable[[str], None],
     args: list[str] | None = None,
+    env: dict[str, str] | None = None,
 ) -> str:
     """
     Create and deploy a container on Targon.
@@ -744,6 +751,7 @@ async def _create_container(
                 port=port,
                 container_concurrency=1,
                 args=args,
+                env=env,
             )
             container = await ensure_running_container(
                 client=targon,
