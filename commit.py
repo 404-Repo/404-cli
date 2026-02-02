@@ -119,9 +119,9 @@ async def _fetch_and_parse_commitments(
 @click.option(
     "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
 )
-@click.option("--wallet.name", "wallet_name", required=True, help="Name of the bittensor wallet to use")
-@click.option("--wallet.hotkey", "wallet_hotkey", required=True, help="Hotkey name of the wallet")
-@click.option("--wallet.path", "wallet_path", default=None, help="Path to the wallet directory (default: ~/.bittensor)")
+@click.option("--wallet-name", "--name", "--wallet_name", "--wallet.name", "wallet_name", required=True, help="Name of the wallet.")
+@click.option("--wallet-path", "--wallet_path", "--wallet.path", "-p", "wallet_path", default=None, help="Path where the wallets are located. For example: /Users/btuser/.bittensor/wallets.")
+@click.option("--hotkey", "--wallet_hotkey", "--wallet-hotkey", "--wallet.hotkey", "-H", "wallet_hotkey", required=True, help="Hotkey of the wallet")
 def commit_hash_cmd(
     commit_hash: str,
     netuid: int,
@@ -197,9 +197,9 @@ def commit_hash_cmd(
 @click.option(
     "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
 )
-@click.option("--wallet.name", "wallet_name", required=True, help="Name of the bittensor wallet to use")
-@click.option("--wallet.hotkey", "wallet_hotkey", required=True, help="Hotkey name of the wallet")
-@click.option("--wallet.path", "wallet_path", default=None, help="Path to the wallet directory (default: ~/.bittensor)")
+@click.option("--wallet-name", "--name", "--wallet_name", "--wallet.name", "wallet_name", required=True, help="Name of the wallet.")
+@click.option("--wallet-path", "--wallet_path", "--wallet.path", "-p", "wallet_path", default=None, help="Path where the wallets are located. For example: /Users/btuser/.bittensor/wallets.")
+@click.option("--hotkey", "--wallet_hotkey", "--wallet-hotkey", "--wallet.hotkey", "-H", "wallet_hotkey", required=True, help="Hotkey of the wallet")
 def commit_repo_cdn_cmd(
     repo: str,
     cdn_url: str,
