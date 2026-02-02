@@ -323,7 +323,17 @@ def _run_commit(
 @click.option(
     "--subtensor.endpoint", "subtensor_endpoint", default="finney", show_default=True
 )
-def list_all_cmd(netuid: int, subtensor_endpoint: str) -> None:
+@click.option(
+    "--exclude-partial",
+    is_flag=True,
+    default=False,
+    help="Exclude partial commits (missing hash, repo, or cdn_url)",
+)
+def list_all_cmd(
+    netuid: int,
+    subtensor_endpoint: str,
+    exclude_partial: bool,
+) -> None:
     """List all revealed commitments."""
     # Ask user for round number interactively
     round_number: int = click.prompt("Enter round number", type=int)
@@ -351,18 +361,81 @@ def list_all_cmd(netuid: int, subtensor_endpoint: str) -> None:
         click.echo(json.dumps({"success": False, "error": f"Failed to fetch schedule: {str(e)}"}))
         raise SystemExit(1)
 
-    async def _list(round_number: int, schedule: Schedule, current_round: int) -> list[dict]:
+    async def _list(round_number: int, schedule: Schedule, current_round: int, exclude_partial: bool) -> list[dict]:
         import bittensor as bt # Bittensor import should be here because bittensor captures command line args for click otherwise
         async with bt.async_subtensor(subtensor_endpoint) as subtensor:
             commitments = await subtensor.get_all_revealed_commitments(netuid=netuid)
             commitments_dict = _parse_commitments(commitments, round_number, schedule, current_round)
             results_list = list(commitments_dict.values())
+            
+            # Filter out partial commits if requested
+            if exclude_partial:
+                results_list = [
+                    entry for entry in results_list
+                    if entry.get("commit_hash") and entry.get("repo") and entry.get("cdn_url")
+                ]
+            
             results_list.sort(key=lambda x: x["commit_block"])
             return results_list
 
-    results = asyncio.run(_list(round_number, schedule, current_round))
-    for entry in results:
-        click.echo(json.dumps(entry))
+    results = asyncio.run(_list(round_number, schedule, current_round, exclude_partial))
+
+    if not results:
+        click.echo("No commitments found for this round.", err=True)
+        return
+
+    # Always display as table
+    _display_commitments_table(results, round_number)
+
+
+def _display_commitments_table(results: list[dict], round_number: int) -> None:
+    """Display commitments in a formatted table."""
+    click.echo(f"\n{'='*140}", err=True)
+    click.echo(f"Round {round_number} - Commitments ({len(results)} total)", err=True)
+    click.echo(f"{'='*140}\n", err=True)
+
+    # Compute dynamic widths so that repo and CDN URL are full-text but aligned
+    repo_header = "Repo"
+    cdn_header = "CDN URL"
+    max_repo_len = max(len((entry.get("repo") or "N/A")) for entry in results) if results else len(repo_header)
+    max_cdn_len = max(len((entry.get("cdn_url") or "N/A")) for entry in results) if results else len(cdn_header)
+    repo_width = max(max_repo_len, len(repo_header))
+    cdn_width = max(max_cdn_len, len(cdn_header))
+
+    # Table header with dynamic spacing; hotkey shows first 8 chars
+    header = (
+        f"{'#':<4} "
+        f"{'Hotkey':<10} "
+        f"{'Block':<10} "
+        f"{'Commit Hash':<40} "
+        f"{repo_header:<{repo_width}} "
+        f"{cdn_header:<{cdn_width}}"
+    )
+    click.echo(header, err=True)
+    click.echo("-" * 140, err=True)
+    
+    # Table rows
+    for idx, entry in enumerate(results, 1):
+        full_hotkey = entry.get("hotkey", "N/A")
+        hotkey = full_hotkey[:8] if full_hotkey != "N/A" else full_hotkey
+
+        commit_hash = entry.get("commit_hash") or "N/A"
+        commit_block = str(entry.get("commit_block") or "N/A")
+
+        repo = entry.get("repo") or "N/A"
+        cdn_url = entry.get("cdn_url") or "N/A"
+
+        row = (
+            f"{idx:<4} "
+            f"{hotkey:<10} "
+            f"{commit_block:<10} "
+            f"{commit_hash:<40} "
+            f"{repo:<{repo_width}} "
+            f"{cdn_url:<{cdn_width}}"
+        )
+        click.echo(row, err=True)
+    
+    click.echo(f"\n{'='*140}\n", err=True)
 
 
 def _parse_commitments(commitments: dict, round_number: int, schedule: Schedule, current_round: int) -> dict[str, dict]:
