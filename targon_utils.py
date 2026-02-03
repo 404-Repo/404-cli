@@ -1,10 +1,9 @@
 import asyncio
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 from loguru import logger
 from targon.client.serverless import ServerlessResourceListItem
-
 from targon_client import ContainerDeployConfig, TargonClient, TargonClientError
 
 
@@ -71,14 +70,15 @@ async def wait_for_healthy(
                 response = await http.get(health_url)
                 response.raise_for_status()
                 if response.status_code == 200:
-                    _log(f"Container at {url} healthy", echo, "info")  
+                    _log(f"Container at {url} healthy", echo, "info")
                     return True
-            except Exception as e:
+            except Exception:
                 _log(f"Container not ready yet: {time_elapsed:.1f}/{timeout:.1f}s", echo, "info")
                 await asyncio.sleep(check_interval)
                 time_elapsed = asyncio.get_running_loop().time() - start
     _log(f"Container at {url} not healthy within {timeout}s. Timeout reached.", echo, "error")
     return False
+
 
 async def ensure_running_container(
     client: TargonClient,
@@ -103,12 +103,12 @@ async def ensure_running_container(
     # Deploy
     deploy_start = asyncio.get_running_loop().time()
     try:
-        _log(f"Deploying container with config.", echo)
+        _log("Deploying container with config.", echo)
         await client.deploy_container(name, config)
     except TargonClientError:
         return None
 
-    _log(f"Waiting for container to become visible.", echo)
+    _log("Waiting for container to become visible.", echo)
     container = await wait_for_visible(
         client,
         name,
@@ -117,7 +117,7 @@ async def ensure_running_container(
         echo=echo,
     )
     if not container:
-        _log(f"Container failed to become visible", echo, "error")
+        _log("Container failed to become visible", echo, "error")
         return None
 
     deploy_time = asyncio.get_running_loop().time() - deploy_start
@@ -134,7 +134,7 @@ async def ensure_running_container(
         health_check_path=health_check_path,
         echo=echo,
     ):
-        _log(f"Container failed health check, deleting", echo, "error")
+        _log("Container failed health check, deleting", echo, "error")
         await client.delete_container(container.uid)
         return None
 

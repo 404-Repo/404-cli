@@ -1,6 +1,6 @@
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import httpx
 
@@ -28,7 +28,7 @@ class Generator:
         self.seed = seed
         self.output_folder = Path(output_folder)
         self.echo = echo or (lambda msg: None)
-        
+
         # Create output folder if it doesn't exist
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -61,7 +61,7 @@ class Generator:
             ]
             self.echo(f"Generated {len(tasks)} tasks")
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for prompt, result in zip(prompts, results):
+            for prompt, result in zip(prompts, results, strict=False):
                 if isinstance(result, Exception):
                     self.echo(f"Prompt {prompt} generation failed: {result}")
                 else:
@@ -161,9 +161,7 @@ class Generator:
                     generation_http_backoff_base * (2 ** (attempt - 1)),
                     generation_http_backoff_max,
                 )
-                self.echo(
-                    f"Prompt {prompt_key} generation attempt {attempt + 1}/{max_attempts} after {backoff:.1f}s"
-                )
+                self.echo(f"Prompt {prompt_key} generation attempt {attempt + 1}/{max_attempts} after {backoff:.1f}s")
                 await asyncio.sleep(backoff)
 
             result = await self._generate_attempt(
@@ -223,7 +221,7 @@ class Generator:
 
                         try:
                             content = await response.aread()
-                        except Exception as e:
+                        except Exception:
                             return None
 
                         download_time = asyncio.get_running_loop().time() - start_time - elapsed

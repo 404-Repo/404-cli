@@ -452,3 +452,41 @@ On failure, outputs error JSON:
 - Image files must be PNG format and filenames must match the prompt keys (derived from URL filenames)
 - Evaluation progress and judge responses are output to stderr, while JSON results go to stdout
 - The output file is created automatically if it doesn't exist
+
+## For Development
+
+To install the package with development dependencies (linting, formatting, type checking tools):
+
+```bash
+pip install -e ".[dev]"
+```
+
+This will install:
+- **ruff** - Fast Python linter
+- **black** - Code formatter
+- **mypy** - Static type checker
+- **bandit** - Security linter
+- **pre-commit** - Git hooks framework
+- **pytest** - Testing framework (if configured)
+- **poethepoet** - Task runner
+
+After installation, you can run all linting and formatting tools at once:
+
+```bash
+poe lint
+```
+
+This will run:
+- `ruff check .` - Lint code
+- `black .` - Format code
+- `bandit . -rq -c pyproject.toml` - Security scan
+- `mypy --explicit-package-bases .` - Type checking
+
+Alternatively, you can run individual tools:
+
+```bash
+ruff check .
+black .
+mypy .
+bandit -r .
+```

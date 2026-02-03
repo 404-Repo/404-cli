@@ -1,10 +1,10 @@
 import asyncio
 import json
-from loguru import logger
-import click
-import httpx
 from pathlib import Path
 
+import click
+import httpx
+from loguru import logger
 
 
 class Renderer:
@@ -25,13 +25,7 @@ class Renderer:
             glb_files = list(self._data_dir.glob("*.glb"))
             all_files = ply_files + glb_files
             tasks = [
-                asyncio.create_task(
-                    self._process_prompt(
-                        process_sem=process_sem,
-                        file=file
-                    )
-                )
-                for file in all_files
+                asyncio.create_task(self._process_prompt(process_sem=process_sem, file=file)) for file in all_files
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
         except KeyboardInterrupt:
@@ -39,11 +33,11 @@ class Renderer:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            raise SystemExit(130)
+            raise SystemExit(130) from None
         except Exception as e:
             logger.error(f"Renderer failed: {e}")
             click.echo(json.dumps({"success": False, "error": str(e)}))
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     async def _process_prompt(self, *, process_sem: asyncio.Semaphore, file: Path) -> None:
         """Render the .ply or .glb files using the renderer endpoint."""
@@ -53,10 +47,10 @@ class Renderer:
                 timeout = httpx.Timeout(connect=300.0, read=300.0, write=300.0, pool=300.0)
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     try:
-                        with open(file, "rb") as f:
+                        with file.open("rb") as f:
                             file_contents = f.read()
                         if file.name.endswith(".ply"):
-                            endpoint = f"{self._endpoint}/render_ply" 
+                            endpoint = f"{self._endpoint}/render_ply"
                         elif file.name.endswith(".glb"):
                             endpoint = f"{self._endpoint}/render_glb"
                         else:
@@ -68,7 +62,7 @@ class Renderer:
                         response.raise_for_status()
                         content = response.content
                         output_file = self._output_dir / f"{file.name.split('.')[0]}.png"
-                        with open(output_file, "wb") as f:
+                        with output_file.open("wb") as f:
                             f.write(content)
                         click.echo(f"Rendered {file.name} to {output_file}", err=True)
                     except Exception as e:
@@ -77,4 +71,4 @@ class Renderer:
             except Exception as e:
                 logger.error(f"Renderer failed: {e}")
                 click.echo(json.dumps({"success": False, "error": str(e)}), err=True)
-                raise SystemExit(1)
+                raise SystemExit(1) from None
