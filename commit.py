@@ -38,6 +38,7 @@ _JUDGE_ARGS: list[str] = [
 ]
 _JUDGE_MODEL: str = "zai-org/GLM-4.1V-9B-Thinking"
 _GITHUB_URL: str = "https://raw.githubusercontent.com/404-Repo/404-active-competition/main"
+_CLI_VERSION: str = "0.1.0"
 
 
 @click.group()
@@ -48,6 +49,12 @@ def cli(verbose: int) -> None:
     levels = {0: "WARNING", 1: "INFO", 2: "DEBUG"}
     logger.remove()
     logger.add(sys.stderr, level=levels.get(verbose, "TRACE"))
+
+
+@cli.command("version")
+def version_cmd() -> None:
+    """Show the CLI version."""
+    click.echo(_CLI_VERSION)
 
 
 def _fetch_state() -> State:
