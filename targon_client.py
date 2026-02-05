@@ -24,9 +24,12 @@ class ContainerDeployConfig(BaseModel):
 
     image: str
     container_concurrency: int
+    min_replicas: int = 1
+    max_replicas: int = 2
     resource_name: str = "h200-small"
     port: int = 10006
     args: list[str] | None = None
+    env: dict[str, str] | None = None
 
 
 class TargonClient:
@@ -87,6 +90,7 @@ class TargonClient:
             container=TargonContainerConfig(
                 image=config.image,
                 args=config.args,
+                env=config.env,
             ),
             resource_name=config.resource_name,
             network=NetworkConfig(
@@ -94,8 +98,8 @@ class TargonClient:
                 visibility="external",
             ),
             scaling=AutoScalingConfig(
-                min_replicas=1,
-                max_replicas=1,
+                min_replicas=config.min_replicas,
+                max_replicas=config.max_replicas,
                 container_concurrency=config.container_concurrency,
                 target_concurrency=config.container_concurrency,
             ),

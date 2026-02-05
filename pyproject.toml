@@ -1,5 +1,5 @@
 [project]
-name = "404-gen-commit"
+name = "404-cli"
 version = "0.1.0"
 description = "Command line tool for the 404 subnet to submit miner solutions"
 requires-python = ">=3.8"
@@ -20,9 +20,124 @@ dependencies = [
 [project.scripts]
 404-cli = "commit:cli"
 
+[project.optional-dependencies]
+dev = [
+    "poetry==2.1.1",
+    "poethepoet[poetry_plugin]==0.36.0",
+    "bandit==1.8.6",
+    "black==25.1.0",
+    "mypy==1.16.1",
+    "ruff==0.12.2",
+    "pre-commit==4.2.0",
+    "types-aiofiles==24.1.0.20250708",
+    "types-requests==2.32.4.20260107",
+]
+
 [tool.setuptools]
 py-modules = ["commit", "generator", "renderer", "judge", "models", "targon_client", "targon_utils"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.black]
+target-version = ['py312']
+line-length = 120
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.pytest_cache
+  | \.idea
+  | \.venv
+  | \.vscode
+)/
+'''
+
+[tool.ruff]
+target-version = "py312"
+cache-dir = ".reports/ruff_cache"
+line-length = 120
+src = ["sources"]
+namespace-packages = ["sources"]
+fix = true
+output-format = "full"
+include = ["*.py"]
+exclude = [
+    ".*",
+    "tests/"
+]
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle
+    "F", # pyflakes
+    "UP", # pyupgrade
+    "I", # isort
+    "S", # flake8-bandit
+    "B", # flake8-bugbear
+    "Q", # flake8-quotes
+    "ASYNC", # flake8-async
+    "PTH", # flake8-use-pathlib
+]
+fixable = ["ALL"]
+unfixable = []
+per-file-ignores = { "tests/**/*.py" = ["S101"] }
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = []
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+lines-after-imports = 2
+
+[tool.bandit]
+skips = ["B104"]
+exclude_dirs = [
+    "./.*/**",
+    "./tests/**",
+]
+
+[tool.mypy]
+cache_dir = ".reports/mypy_cache/"
+ignore_missing_imports = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = false
+warn_return_any = true
+warn_no_return = false
+warn_unreachable = true
+strict_equality = true
+warn_redundant_casts = true
+exclude = [
+    '.venv/.*'
+]
+
+[[tool.mypy.overrides]]
+module = [
+    # place modules to skip here
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+cache_dir = ".reports/pytest_cache"
+minversion = "6.0"
+addopts = "-ra -v --asyncio-mode=auto"
+testpaths = ["tests", ]
+pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.poe]
+poetry_command = ""
+
+[tool.poe.tasks.lint]
+ignore_fail = "return_non_zero"
+sequence = [
+    { cmd = "ruff check ." },
+    { cmd = "black ." },
+    { cmd = "bandit . -rq -c pyproject.toml" },
+    { cmd = "mypy --explicit-package-bases ." },
+]

@@ -1,6 +1,6 @@
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import httpx
 
@@ -14,6 +14,7 @@ class Generator:
         seed: int,
         output_folder: Path,
         echo: Callable[[str], None] | None = None,
+        concurrency: int = 8,
     ) -> None:
         """
         Initialize the Generator.
@@ -23,12 +24,14 @@ class Generator:
             seed: Seed value for generation (ensures reproducibility)
             output_folder: Path to folder where .ply files will be saved
             echo: Optional callback function for logging messages
+            concurrency: Max concurrent prompts / HTTP requests
         """
         self.endpoint = endpoint
         self.seed = seed
         self.output_folder = Path(output_folder)
         self.echo = echo or (lambda msg: None)
-        
+        self.concurrency = concurrency
+
         # Create output folder if it doesn't exist
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -46,8 +49,8 @@ class Generator:
         tasks = []
         try:
             self.echo(f"Processing {len(prompts)} prompts...")
-            request_sem = asyncio.Semaphore(1)  # Using semaphores to limit request to one at a time.
-            process_sem = asyncio.Semaphore(8)  # Limiting request to control traffic
+            request_sem = asyncio.Semaphore(self.concurrency)
+            process_sem = asyncio.Semaphore(self.concurrency)
             tasks = [
                 asyncio.create_task(
                     self._process_prompt(
@@ -61,7 +64,7 @@ class Generator:
             ]
             self.echo(f"Generated {len(tasks)} tasks")
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            for prompt, result in zip(prompts, results):
+            for prompt, result in zip(prompts, results, strict=False):
                 if isinstance(result, Exception):
                     self.echo(f"Prompt {prompt} generation failed: {result}")
                 else:
@@ -161,9 +164,7 @@ class Generator:
                     generation_http_backoff_base * (2 ** (attempt - 1)),
                     generation_http_backoff_max,
                 )
-                self.echo(
-                    f"Prompt {prompt_key} generation attempt {attempt + 1}/{max_attempts} after {backoff:.1f}s"
-                )
+                self.echo(f"Prompt {prompt_key} generation attempt {attempt + 1}/{max_attempts} after {backoff:.1f}s")
                 await asyncio.sleep(backoff)
 
             result = await self._generate_attempt(
@@ -223,7 +224,7 @@ class Generator:
 
                         try:
                             content = await response.aread()
-                        except Exception as e:
+                        except Exception:
                             return None
 
                         download_time = asyncio.get_running_loop().time() - start_time - elapsed
