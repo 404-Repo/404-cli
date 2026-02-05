@@ -14,6 +14,7 @@ class Generator:
         seed: int,
         output_folder: Path,
         echo: Callable[[str], None] | None = None,
+        concurrency: int = 8,
     ) -> None:
         """
         Initialize the Generator.
@@ -23,11 +24,13 @@ class Generator:
             seed: Seed value for generation (ensures reproducibility)
             output_folder: Path to folder where .ply files will be saved
             echo: Optional callback function for logging messages
+            concurrency: Max concurrent prompts / HTTP requests
         """
         self.endpoint = endpoint
         self.seed = seed
         self.output_folder = Path(output_folder)
         self.echo = echo or (lambda msg: None)
+        self.concurrency = concurrency
 
         # Create output folder if it doesn't exist
         self.output_folder.mkdir(parents=True, exist_ok=True)
@@ -46,8 +49,8 @@ class Generator:
         tasks = []
         try:
             self.echo(f"Processing {len(prompts)} prompts...")
-            request_sem = asyncio.Semaphore(1)  # Using semaphores to limit request to one at a time.
-            process_sem = asyncio.Semaphore(8)  # Limiting request to control traffic
+            request_sem = asyncio.Semaphore(self.concurrency)
+            process_sem = asyncio.Semaphore(self.concurrency)
             tasks = [
                 asyncio.create_task(
                     self._process_prompt(

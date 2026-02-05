@@ -638,7 +638,39 @@ def _parse_commitments(commitments: dict, round_number: int, schedule: Schedule,
     help="HuggingFace token to pass as HF_TOKEN environment variable",
 )
 @click.option("--name", "container_name", default=None, help="Custom container name (default: generator)")
-def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | None, container_name: str | None) -> None:
+@click.option(
+    "--container-concurrency",
+    "container_concurrency",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Maximum concurrent requests per generator replica.",
+)
+@click.option(
+    "--min-replicas",
+    "min_replicas",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Minimum number of generator replicas.",
+)
+@click.option(
+    "--max-replicas",
+    "max_replicas",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Maximum number of generator replicas.",
+)
+def start_generator_cmd(
+    image_url: str,
+    targon_api_key: str,
+    hf_token: str | None,
+    container_name: str | None,
+    container_concurrency: int,
+    min_replicas: int,
+    max_replicas: int,
+) -> None:
     """Start the generator container."""
     click.echo(f"Starting generator: {image_url}", err=True)
 
@@ -663,6 +695,9 @@ def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | Non
                 health_check_path=_GENERATOR_HEALTH_CHECK_PATH,
                 echo=lambda msg: click.echo(msg, err=True),
                 env=env,
+                container_concurrency=container_concurrency,
+                min_replicas=min_replicas,
+                max_replicas=max_replicas,
             )
         )
         click.echo(json.dumps({"success": True, "container_url": container_url}))
@@ -678,7 +713,36 @@ def start_generator_cmd(image_url: str, targon_api_key: str, hf_token: str | Non
 
 @cli.command("start-renderer")
 @click.option("--targon-api-key", required=True, help="Targon API key")
-def start_renderer_cmd(targon_api_key: str) -> None:
+@click.option(
+    "--container-concurrency",
+    "container_concurrency",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Maximum concurrent requests per renderer replica.",
+)
+@click.option(
+    "--min-replicas",
+    "min_replicas",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Minimum number of renderer replicas.",
+)
+@click.option(
+    "--max-replicas",
+    "max_replicas",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Maximum number of renderer replicas.",
+)
+def start_renderer_cmd(
+    targon_api_key: str,
+    container_concurrency: int,
+    min_replicas: int,
+    max_replicas: int,
+) -> None:
     """Start the renderer container."""
     click.echo(f"Starting renderer: {_RENDER_IMAGE_URL}", err=True)
 
@@ -692,6 +756,9 @@ def start_renderer_cmd(targon_api_key: str) -> None:
                 port=_RENDER_PORT,
                 health_check_path=_RENDER_HEALTH_CHECK_PATH,
                 echo=lambda msg: click.echo(msg, err=True),
+                container_concurrency=container_concurrency,
+                min_replicas=min_replicas,
+                max_replicas=max_replicas,
             )
         )
         click.echo(json.dumps({"success": True, "container_url": container_url}))
@@ -709,7 +776,14 @@ def start_renderer_cmd(targon_api_key: str) -> None:
 @click.option("--data-dir", required=True, help="Path to the directory containing the .ply files to render")
 @click.option("--endpoint", required=True, help="Renderer endpoint URL.")
 @click.option("--output-dir", default="results", help="Path to the directory where the rendered images will be saved.")
-def render_cmd(data_dir: str, endpoint: str, output_dir: str) -> None:
+@click.option(
+    "--concurrency",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Maximum number of files rendered concurrently.",
+)
+def render_cmd(data_dir: str, endpoint: str, output_dir: str, concurrency: int) -> None:
     """Render the .ply files using the renderer endpoint."""
     click.echo(f"Rendering {data_dir} with endpoint {endpoint}", err=True)
     try:
@@ -717,6 +791,7 @@ def render_cmd(data_dir: str, endpoint: str, output_dir: str) -> None:
             data_dir=data_dir,
             endpoint=endpoint,
             output_dir=output_dir,
+            concurrency=concurrency,
         )
         asyncio.run(renderer.render())
         click.echo(json.dumps({"success": True, "output_dir": output_dir}))
@@ -833,11 +908,19 @@ def stop_pods_cmd(targon_api_key: str) -> None:
 @click.option("--endpoint", required=True, help="Generator endpoint URL.")
 @click.option("--seed", required=True, help="Seed for generation.")
 @click.option("--output-folder", default="results", help="Folder path where generated .ply files will be saved.")
+@click.option(
+    "--concurrency",
+    type=int,
+    default=8,
+    show_default=True,
+    help="Maximum number of prompts / HTTP requests processed concurrently.",
+)
 def generate_cmd(
     prompts_file: str,
     endpoint: str,
     seed: str,
     output_folder: str,
+    concurrency: int,
 ) -> None:
     """Generate models using the generator endpoint."""
     # Read prompts from prompt file
@@ -864,6 +947,7 @@ def generate_cmd(
         seed=int(seed),
         output_folder=Path(output_folder),
         echo=lambda msg: click.echo(msg, err=True),
+        concurrency=concurrency,
     )
 
     try:
@@ -888,6 +972,9 @@ async def _create_container(
     echo: Callable[[str], None],
     args: list[str] | None = None,
     env: dict[str, str] | None = None,
+    container_concurrency: int = 1,
+    min_replicas: int = 1,
+    max_replicas: int = 2,
 ) -> str:
     """
     Create and deploy a container on Targon.
@@ -914,7 +1001,9 @@ async def _create_container(
                 image=image_url,
                 resource_name=resource_name,
                 port=port,
-                container_concurrency=1,
+                container_concurrency=container_concurrency,
+                min_replicas=min_replicas,
+                max_replicas=max_replicas,
                 args=args,
                 env=env,
             )

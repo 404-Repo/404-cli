@@ -8,18 +8,26 @@ from loguru import logger
 
 
 class Renderer:
-    def __init__(self, *, endpoint: str, data_dir: str, output_dir: str) -> None:
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        data_dir: str,
+        output_dir: str,
+        concurrency: int = 1,
+    ) -> None:
         self._endpoint = endpoint
         self._data_dir = Path(data_dir)
         self._output_dir = Path(output_dir)
         self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._concurrency = concurrency
 
     async def render(self) -> None:
         """Render the .ply and .glb files using the renderer endpoint."""
         click.echo(f"Rendering {self._data_dir} with endpoint {self._endpoint}", err=True)
         tasks: list[asyncio.Task] = []
         try:
-            process_sem = asyncio.Semaphore(1)
+            process_sem = asyncio.Semaphore(self._concurrency)
             # Collect both .ply and .glb files
             ply_files = list(self._data_dir.glob("*.ply"))
             glb_files = list(self._data_dir.glob("*.glb"))
