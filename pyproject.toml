@@ -2,10 +2,11 @@
 name = "404-gen-commit"
 version = "0.1.0"
 description = "Command line tool for the 404 subnet to submit miner solutions"
-requires-python = ">=3.8"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "loguru==0.7.3",
     "bittensor==9.12.2",
+    "async-substrate-interface<2",
     "bittensor-wallet==4.0.1",
     "click==8.3.1",
     "pydantic==2.12.4",

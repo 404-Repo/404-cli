@@ -187,17 +187,26 @@ The container URL is also displayed on stderr and should be used as the `--endpo
 
 ### Generate Models
 
-The `generate` command processes a list of prompt images and generates 3D models (.ply files) using a generator endpoint. It:
-1. Reads prompts (image URLs) from a text file
-2. Downloads each prompt image from its URL
-3. Generates a 3D model for each prompt using the generator endpoint
-4. Saves all generated models as .ply files to the local filesystem
+The `generate` command submits a prompt batch to the generator service and downloads generated `.js` files. It:
+1. Reads prompts from a JSON file (`--prompts-json`) with prompt objects containing `image_url` and optional `stem`
+2. Submits the full prompt batch to `/generate`
+3. Polls `/status` until generation reaches `complete`
+4. Downloads `/results` ZIP and saves generated `.js` files locally
 
 **Options:**
-- `--prompts-file` (required): Path to a text file containing one image URL per line
+- `--prompts-json` (required): Path to JSON file with format:
+  ```json
+  {
+    "prompts": [
+      {"stem": "a1b2c3d4", "image_url": "https://storage.example.com/prompts/a1b2c3d4.jpg"},
+      {"stem": "e5f6g7h8", "image_url": "https://storage.example.com/prompts/e5f6g7h8.png"}
+    ],
+    "seed": 42
+  }
+  ```
 - `--endpoint` (required): Generator endpoint URL (obtained from `start-generator` command)
-- `--seed` (required): Seed value for generation (ensures reproducibility)
-- `--output-folder` (optional, default: "results"): Local folder path where generated .ply files will be saved
+- `--seed` (optional): Seed value override. If omitted, uses `seed` from the prompts JSON
+- `--output-folder` (optional, default: "results"): Local folder path where generated .js files will be saved
 
 **Example:**
 
@@ -210,20 +219,21 @@ First, start the generator container:
 
 Note the container URL from the output (e.g., `https://generator-abc123.targon.io`).
 
-Then, create a file `prompts.txt` with image URLs.
+Then, create a prompts JSON file (for example `example_prompts.json`).
 
 Run the generate command:
 ```bash
 404-cli generate \
-  --prompts-file prompts.txt \
+  --prompts-json example_prompts.json \
   --endpoint https://generator-abc123.targon.io \
-  --seed 42 \
   --output-folder results
 ```
 
+When `stem` is provided in JSON, output files are named `<stem>.js`.
+
 The generated files will be saved locally at paths like:
-- `results/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.ply`
-- `results/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.ply`
+- `results/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.js`
+- `results/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.js`
 - etc.
 
 **Output:**
@@ -265,19 +275,19 @@ On success, outputs JSON with the container URL:
 The container URL is also displayed on stderr and should be used as the `--endpoint` parameter for the `render` command.
 
 **Notes:**
-- Uses the predefined image: `ghcr.io/404-repo/render-service:latest`
-- Deploys on `rtx4090-small` resource type
+- Uses the predefined image: `europe-west3-docker.pkg.dev/gen-456515/active-competition/render-service-js:0.4.3`
+- Deploys on `cpu-small` resource type
 - Uses port 8000 and health check path `/health`
 
 ### Render Models
 
-The `render` command processes .ply files and renders them to PNG images using a renderer endpoint. It:
-1. Scans the specified directory for all .ply and .glb files
-2. Sends each .ply and .glb file to the renderer endpoints
+The `render` command processes JavaScript submission files (`.js`) and renders them to PNG images using a renderer endpoint. It:
+1. Scans the specified directory for all `.js` files
+2. Sends each file as JSON `{ "source": "<js code>" }` to the renderer endpoint (`/render/grid`)
 3. Saves the rendered PNG images to the output directory
 
 **Options:**
-- `--data-dir` (required): Path to the directory containing the .ply files to render
+- `--data-dir` (required): Path to the directory containing the `.js` submission files to render
 - `--endpoint` (required): Renderer endpoint URL (obtained from `start-renderer` command)
 - `--output-dir` (optional, default: "results"): Path to the directory where rendered PNG images will be saved
 
@@ -291,7 +301,7 @@ First, start the renderer container:
 
 Note the container URL from the output (e.g., `https://render-abc123.targon.io`).
 
-Then, render the .ply files:
+Then, render the `.js` files:
 ```bash
 404-cli render \
   --data-dir results \
@@ -317,7 +327,7 @@ On failure, outputs error JSON:
 
 **Notes:**
 - Files are processed with concurrency control (up to 2 concurrent renders)
-- Each .ply file is rendered to a PNG with the same base filename
+- Each .js file is rendered to a PNG with the same base filename
 - The output directory is created automatically if it doesn't exist
 - Render progress and status messages are output to stderr, while JSON results go to stdout
 
@@ -343,7 +353,7 @@ The command outputs status messages to stderr as it stops each container. No JSO
 
 ### Start Judge
 
-The `start-judge` command deploys and starts a judge container on Targon. It deploys the container using the predefined vLLM image with the GLM-4.1V vision model and outputs the container URL which can then be used with the `judge` command.
+The `start-judge` command deploys and starts a judge container on Targon. It deploys the container using the predefined vLLM image with the GLM-4.6V-Flash vision model and outputs the container URL which can then be used with the `judge` command.
 
 **Options:**
 - `--targon-api-key` (required): Targon API key for authentication
@@ -363,10 +373,10 @@ On success, outputs JSON with the container URL:
 The container URL is also displayed on stderr and should be used as the `--endpoint` parameter for the `judge` command.
 
 **Notes:**
-- Uses the predefined image: `vllm/vllm-openai:latest`
+- Uses the predefined image: `vllm/vllm-openai:v0.20.0`
 - Deploys on `rtx4090-small` resource type
 - Uses port 8000 and health check path `/health`
-- Runs the GLM-4.1V-9B-Thinking vision model for evaluating 3D models
+- Runs the GLM-4.6V-Flash vision model for evaluating 3D models
 
 ### Judge Models
 
@@ -448,7 +458,7 @@ On failure, outputs error JSON:
 
 **Notes:**
 - Uses position-balanced evaluation: each prompt is evaluated twice with swapped model positions to reduce position bias
-- The judge uses a vision language model (GLM-4.1V-9B-Thinking) to compare rendered 3D model images against the prompt
+- The judge uses a vision language model (GLM-4.6V-Flash) to compare rendered 3D model images against the prompt
 - Image files must be PNG format and filenames must match the prompt keys (derived from URL filenames)
 - Evaluation progress and judge responses are output to stderr, while JSON results go to stdout
 - The output file is created automatically if it doesn't exist

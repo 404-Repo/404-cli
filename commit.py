@@ -9,7 +9,7 @@ import click
 from loguru import logger
 from targon_client import TargonClient, ContainerDeployConfig
 from targon_utils import ensure_running_container
-from generator import Generator
+from generator import Generator, PromptItem
 from renderer import Renderer
 from targon.client.serverless import ServerlessResourceListItem
 from judge import Judge
@@ -19,22 +19,29 @@ from models import State, Schedule
 _GENERATOR_POD_NAME: str = "generator"
 _GENERATOR_PORT: int = 10006
 _GENERATOR_HEALTH_CHECK_PATH: str = "/health"
+_GENERATOR_RESOURCE_NAME: str = "h200-large"
 _RENDER_POD_NAME: str = "render"
 _RENDER_PORT: int = 8000
 _RENDER_HEALTH_CHECK_PATH: str = "/health"
-_RENDER_IMAGE_URL: str = "ghcr.io/404-repo/render-service:latest"
+_RENDER_IMAGE_URL: str = "europe-west3-docker.pkg.dev/gen-456515/active-competition/render-service-js:0.4.3"
+_RENDER_RESOURCE_NAME: str = "cpu-small"
 _JUDGE_POD_NAME: str = "judge"
 _JUDGE_PORT: int = 8000
 _JUDGE_HEALTH_CHECK_PATH: str = "/health"
-_JUDGE_IMAGE_URL: str = "vllm/vllm-openai:latest"
+_JUDGE_IMAGE_URL: str = "vllm/vllm-openai:v0.20.0"
 _JUDGE_ARGS: list[str] = [
-    "--model", "zai-org/GLM-4.1V-9B-Thinking",
-    "--max-model-len", "8096",
-    "--tensor-parallel-size", "1",
-    "--gpu-memory-utilization", "0.95",
-    "--max-num-seqs", "4",
+    "--model", "zai-org/GLM-4.6V-Flash",
+    "--revision", "411bb4d77144a3f03accbf4b780f5acb8b7cde4e",
+    "--served-model-name", "glm-4.6v-flash",
+    "--host", "0.0.0.0",
+    "--port", "8000",
+    "--trust-remote-code",
+    "--dtype", "bfloat16",
+    "--gpu-memory-utilization", "0.90",
+    "--max-model-len", "32768",
+    "--max-num-seqs", "32",
 ]
-_JUDGE_MODEL: str = "zai-org/GLM-4.1V-9B-Thinking"
+_JUDGE_MODEL: str = "glm-4.6v-flash"
 _GITHUB_URL: str = "https://raw.githubusercontent.com/404-Repo/404-active-competition/main"
 
 
@@ -397,7 +404,7 @@ def start_generator_cmd(image_url: str, targon_api_key: str) -> None:
                 image_url=image_url,
                 container_name=_GENERATOR_POD_NAME,
                 targon_api_key=targon_api_key,
-                resource_name="h200-small",
+                resource_name=_GENERATOR_RESOURCE_NAME,
                 port=_GENERATOR_PORT,
                 health_check_path=_GENERATOR_HEALTH_CHECK_PATH,
                 echo=lambda msg: click.echo(msg, err=True),
@@ -426,7 +433,7 @@ def start_renderer_cmd(targon_api_key: str) -> None:
                 image_url=_RENDER_IMAGE_URL,
                 container_name=_RENDER_POD_NAME,
                 targon_api_key=targon_api_key,
-                resource_name="rtx4090-small",
+                resource_name=_RENDER_RESOURCE_NAME,
                 port=_RENDER_PORT,
                 health_check_path=_RENDER_HEALTH_CHECK_PATH,
                 echo=lambda msg: click.echo(msg, err=True),
@@ -444,11 +451,11 @@ def start_renderer_cmd(targon_api_key: str) -> None:
 
 
 @cli.command("render")
-@click.option("--data-dir", required=True, help="Path to the directory containing the .ply files to render")
+@click.option("--data-dir", required=True, help="Path to the directory containing .js submission files to render")
 @click.option("--endpoint", required=True, help="Renderer endpoint URL.")
 @click.option("--output-dir", default="results", help="Path to the directory where the rendered images will be saved.")
 def render_cmd(data_dir: str, endpoint: str, output_dir: str) -> None:
-    """Render the .ply files using the renderer endpoint."""
+    """Render .js submission files using the renderer endpoint."""
     click.echo(f"Rendering {data_dir} with endpoint {endpoint}", err=True)
     try:
         renderer = Renderer(
@@ -556,45 +563,80 @@ def stop_pods_cmd(targon_api_key: str) -> None:
 
 
 @cli.command("generate")
-@click.option("--prompts-file", required=True, help="Path to the file with prompts that are valid URLs.")
+@click.option("--prompts-json", required=True, help="Path to JSON file: {\"prompts\":[{\"stem\",\"image_url\"}],\"seed\":42}.")
 @click.option("--endpoint", required=True, help="Generator endpoint URL.")
-@click.option("--seed", required=True, help="Seed for generation.")
-@click.option("--output-folder", default="results", help="Folder path where generated .ply files will be saved.")
+@click.option("--seed", required=False, help="Optional seed override. If omitted, uses 'seed' from prompts JSON.")
+@click.option("--output-folder", default="results", help="Folder path where generated .js files will be saved.")
 def generate_cmd(
-    prompts_file: str,
+    prompts_json: str,
     endpoint: str,
-    seed: str,
+    seed: str | None,
     output_folder: str,
 ) -> None:  
     """Generate models using the generator endpoint."""
-    # Read prompts from prompt file
-    click.echo("Reading prompts from file...", err=True)
+    prompt_items: list[PromptItem] = []
+    resolved_seed: int | None = int(seed) if seed is not None else None
+
+    click.echo("Reading prompts from JSON file...", err=True)
     try:
-        with open(prompts_file, "r") as f:
-            prompts = [line.strip() for line in f.readlines() if line.strip()]
+        with open(prompts_json, "r", encoding="utf-8") as f:
+            payload = json.load(f)
     except FileNotFoundError:
-        click.echo(f"Prompts file {prompts_file} not found", err=True)
+        click.echo(f"Prompts JSON file {prompts_json} not found", err=True)
+        raise SystemExit(1)
+    except json.JSONDecodeError as e:
+        click.echo(f"Invalid JSON in {prompts_json}: {e}", err=True)
         raise SystemExit(1)
     except Exception as e:
-        click.echo(f"Error reading prompts file: {e}", err=True)
+        click.echo(f"Error reading prompts JSON file: {e}", err=True)
         raise SystemExit(1)
-    
-    if not prompts:
-        click.echo("No prompts found in file", err=True)
+
+    prompts_payload = payload.get("prompts")
+    if not isinstance(prompts_payload, list) or not prompts_payload:
+        click.echo("JSON must contain non-empty 'prompts' list", err=True)
         raise SystemExit(1)
-    
-    click.echo(f"Found {len(prompts)} prompts to process", err=True)
+
+    for idx, item in enumerate(prompts_payload):
+        if not isinstance(item, dict):
+            click.echo(f"prompts[{idx}] must be an object", err=True)
+            raise SystemExit(1)
+        image_url = item.get("image_url")
+        stem = item.get("stem")
+        if not isinstance(image_url, str) or not image_url.strip():
+            click.echo(f"prompts[{idx}].image_url must be a non-empty string", err=True)
+            raise SystemExit(1)
+        if stem is not None and (not isinstance(stem, str) or not stem.strip()):
+            click.echo(f"prompts[{idx}].stem must be a non-empty string when provided", err=True)
+            raise SystemExit(1)
+        prompt_items.append(PromptItem(image_url=image_url.strip(), stem=stem.strip() if stem else None))
+
+    if resolved_seed is None:
+        payload_seed = payload.get("seed")
+        if payload_seed is None:
+            click.echo("Provide --seed or include numeric 'seed' in prompts JSON", err=True)
+            raise SystemExit(1)
+        try:
+            resolved_seed = int(payload_seed)
+        except (TypeError, ValueError):
+            click.echo("'seed' in prompts JSON must be an integer", err=True)
+            raise SystemExit(1)
+
+    if resolved_seed is None:
+        click.echo("Unable to resolve seed value", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Found {len(prompt_items)} prompts to process", err=True)
 
     # Create Generator instance
     generator = Generator(
         endpoint=endpoint,
-        seed=int(seed),
+        seed=resolved_seed,
         output_folder=Path(output_folder),
         echo=lambda msg: click.echo(msg, err=True),
     )
     
     try:
-        asyncio.run(generator.generate_all(prompts))
+        asyncio.run(generator.generate_all(prompt_items))
         click.echo(json.dumps({"success": True}))
     except KeyboardInterrupt:
         logger.warning("Generation interrupted by user")
