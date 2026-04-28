@@ -12,7 +12,6 @@ from targon_utils import ensure_running_container
 from generator import Generator, PromptItem
 from renderer import Renderer
 from targon.client.serverless import ServerlessResourceListItem
-from judge import Judge
 from models import State, Schedule
 
 
@@ -25,23 +24,6 @@ _RENDER_PORT: int = 8000
 _RENDER_HEALTH_CHECK_PATH: str = "/health"
 _RENDER_IMAGE_URL: str = "europe-west3-docker.pkg.dev/gen-456515/active-competition/render-service-js:0.4.3"
 _RENDER_RESOURCE_NAME: str = "cpu-small"
-_JUDGE_POD_NAME: str = "judge"
-_JUDGE_PORT: int = 8000
-_JUDGE_HEALTH_CHECK_PATH: str = "/health"
-_JUDGE_IMAGE_URL: str = "vllm/vllm-openai:v0.20.0"
-_JUDGE_ARGS: list[str] = [
-    "--model", "zai-org/GLM-4.6V-Flash",
-    "--revision", "411bb4d77144a3f03accbf4b780f5acb8b7cde4e",
-    "--served-model-name", "glm-4.6v-flash",
-    "--host", "0.0.0.0",
-    "--port", "8000",
-    "--trust-remote-code",
-    "--dtype", "bfloat16",
-    "--gpu-memory-utilization", "0.90",
-    "--max-model-len", "32768",
-    "--max-num-seqs", "32",
-]
-_JUDGE_MODEL: str = "glm-4.6v-flash"
 _GITHUB_URL: str = "https://raw.githubusercontent.com/404-Repo/404-active-competition/main"
 
 
@@ -470,84 +452,16 @@ def render_cmd(data_dir: str, endpoint: str, output_dir: str) -> None:
         click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
 
 
-@cli.command("start-judge")
-@click.option("--targon-api-key", required=True, help="Targon API key.")
-def start_judge_cmd(targon_api_key: str) -> None:
-    """Start the judge container."""
-    click.echo(f"Starting judge: {_JUDGE_IMAGE_URL}", err=True)
-    try:
-        container_url = asyncio.run(
-            _create_container(
-                image_url=_JUDGE_IMAGE_URL,
-                container_name=_JUDGE_POD_NAME,
-                targon_api_key=targon_api_key,
-                resource_name="rtx4090-small",
-                port=_JUDGE_PORT,
-                health_check_path=_JUDGE_HEALTH_CHECK_PATH,
-                echo=lambda msg: click.echo(msg, err=True),
-                args=_JUDGE_ARGS,
-            )
-        )
-        click.echo(json.dumps({"success": True, "container_url": container_url}))
-    except KeyboardInterrupt:
-        logger.warning("Judge start interrupted by user")
-        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
-        raise SystemExit(130)  # Standard exit code for SIGINT
-    except Exception as e:
-        logger.error(f"Judge start failed: {e}")
-        click.echo(json.dumps({"success": False, "error": str(e)}))
-        raise SystemExit(1)
-
-    
-@cli.command("judge")
-@click.option("--prompt-file", required=True, help="Path to the file with prompts that are valid URLs.")
-@click.option("--image-dir-1", required=True, help="Path to the directory containing the first set of images.")
-@click.option("--image-dir-2", required=True, help="Path to the directory containing the second set of images.")
-@click.option("--endpoint", required=True, help="Judge endpoint URL.")
-@click.option("--seed", required=True, help="Seed for generation.")
-@click.option("--output-file", default="duels.json", help="Path to the JSON file where duel results will be saved (default: duels.json).")
-def judge_cmd(
-    prompt_file: str,
-    image_dir_1: str,
-    image_dir_2: str,
-    endpoint: str,
-    seed: str,
-    output_file: str,
-) -> None:
-    """Judge the two sets of images using the judge endpoint."""
-    click.echo(f"Judging {prompt_file} with endpoint {endpoint}", err=True)
-    try:
-        judge = Judge(
-            model=_JUDGE_MODEL,
-            endpoint=f"{endpoint}/v1",
-            seed=int(seed),
-            temperature=0.0,
-            max_tokens=1024,
-            timeout=30.0,
-        )
-        asyncio.run(judge.judge(Path(prompt_file), Path(image_dir_1), Path(image_dir_2), Path(output_file)))
-        click.echo(json.dumps({"success": True, "output_file": output_file}))
-    except KeyboardInterrupt:
-        logger.warning("Judge interrupted by user")
-        click.echo(json.dumps({"success": False, "error": "Interrupted by user"}))
-        raise SystemExit(130)  # Standard exit code for SIGINT
-    except Exception as e:
-        logger.error(f"Judge failed: {e}")
-        click.echo(json.dumps({"success": False, "error": str(e)}))
-        raise SystemExit(1)
-    finally:
-        click.echo(json.dumps({"success": True}))
-
 @cli.command("stop-pods")
 @click.option("--targon-api-key", required=True, help="Targon API key.")
 def stop_pods_cmd(targon_api_key: str) -> None:
-    """Stop the generator, render and judge pods."""
+    """Stop the generator and render pods."""
     click.echo("Stopping pods...", err=True)
     async def _stop() -> None:
         async with TargonClient(api_key=targon_api_key) as targon:
             containers = await targon.list_containers()
             for c in containers:
-                if c.name in [_GENERATOR_POD_NAME, _RENDER_POD_NAME, _JUDGE_POD_NAME]:
+                if c.name in [_GENERATOR_POD_NAME, _RENDER_POD_NAME]:
                     click.echo(f"Stopping container {c.name} ({c.uid})", err=True)
                     await targon.delete_container(c.uid)
     try:
