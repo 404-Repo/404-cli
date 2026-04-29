@@ -25,22 +25,22 @@ class View(BaseModel):
 
 # 8 white-bg views: 4 front-ish and 4 diagnostic views.
 WHITE_VIEWS: list[View] = [
-    View("front", 0, 0),
-    View("front_left", 30, 0),
-    View("front_right", 330, 0),
-    View("front_above", 0, -30),
-    View("right", 90, 0),
-    View("back", 180, 0),
-    View("left", 270, 0),
-    View("top_down", 0, -90),
+    View(name="front", theta=0, phi=0),
+    View(name="front_left", theta=30, phi=0),
+    View(name="front_right", theta=330, phi=0),
+    View(name="front_above", theta=0, phi=-30),
+    View(name="right", theta=90, phi=0),
+    View(name="back", theta=180, phi=0),
+    View(name="left", theta=270, phi=0),
+    View(name="top_down", theta=0, phi=-90),
 ]
 
 # 4 gray-bg views: front-ish set for fallback/rescue flow.
 GRAY_VIEWS: list[View] = [
-    View("front", 0, 0),
-    View("front_left", 30, 0),
-    View("front_right", 330, 0),
-    View("front_above", 0, -30),
+    View(name="front", theta=0, phi=0),
+    View(name="front_left", theta=30, phi=0),
+    View(name="front_right", theta=330, phi=0),
+    View(name="front_above", theta=0, phi=-30),
 ]
 
 WHITE_BG: str = "ffffff"
