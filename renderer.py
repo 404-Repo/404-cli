@@ -1,14 +1,57 @@
 import asyncio
+import base64
+import binascii
 import json
 from pathlib import Path
 
 import click
 import httpx
 from loguru import logger
+from pydantic import BaseModel, ConfigDict
 
 
+_RENDER_PATH: str = "/render"
 _RENDER_GRID_PATH: str = "/render/grid"
 _MAX_ATTEMPTS: int = 3
+
+
+class View(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    theta: float
+    phi: float
+
+
+# 8 white-bg views: 4 front-ish and 4 diagnostic views.
+WHITE_VIEWS: list[View] = [
+    View("front", 0, 0),
+    View("front_left", 30, 0),
+    View("front_right", 330, 0),
+    View("front_above", 0, -30),
+    View("right", 90, 0),
+    View("back", 180, 0),
+    View("left", 270, 0),
+    View("top_down", 0, -90),
+]
+
+# 4 gray-bg views: front-ish set for fallback/rescue flow.
+GRAY_VIEWS: list[View] = [
+    View("front", 0, 0),
+    View("front_left", 30, 0),
+    View("front_right", 330, 0),
+    View("front_above", 0, -30),
+]
+
+WHITE_BG: str = "ffffff"
+GRAY_BG: str = "808080"
+
+_RENDER_DEFAULTS: dict[str, str] = {
+    "lighting": "follow",
+    "img_size": "1024",
+    "cam_radius": "2.0",
+    "cam_fov_deg": "49.1",
+}
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -16,6 +59,33 @@ def _is_retryable(exc: Exception) -> bool:
         status = exc.response.status_code
         return status >= 500 or status in (429, 430)
     return isinstance(exc, (httpx.TimeoutException, httpx.RequestError))
+
+
+def _build_query(views: list[View], bg_color: str) -> dict[str, str]:
+    return {
+        **_RENDER_DEFAULTS,
+        "thetas": ",".join(str(v.theta) for v in views),
+        "phis": ",".join(str(v.phi) for v in views),
+        "bg_color": bg_color,
+    }
+
+
+def _decode_render_response(response: httpx.Response, expected_views: int) -> list[bytes]:
+    if expected_views == 1:
+        return [response.content]
+
+    data = response.json()
+    encoded = data.get("images")
+    if not isinstance(encoded, list) or len(encoded) != expected_views:
+        raise ValueError(
+            f"render returned {len(encoded) if isinstance(encoded, list) else 'no'} images, "
+            f"expected {expected_views}"
+        )
+
+    try:
+        return [base64.b64decode(img) for img in encoded]
+    except (binascii.Error, ValueError) as e:
+        raise ValueError(f"render returned invalid base64 images: {e}") from e
 
 
 class Renderer:
@@ -26,7 +96,7 @@ class Renderer:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
     async def render(self) -> None:
-        """Render .js files by sending JSON to POST /render/grid."""
+        """Render .js files to 12 PNG views using POST /render."""
         click.echo(f"Rendering {self._data_dir} with endpoint {self._endpoint}", err=True)
         tasks: list[asyncio.Task] = []
         try:
@@ -74,30 +144,92 @@ class Renderer:
             click.echo(json.dumps({"success": False, "error": str(e)}))
             raise SystemExit(1)
 
+    async def _render_views(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        source: str,
+        views: list[View],
+        bg_color: str,
+    ) -> dict[str, bytes]:
+        endpoint = f"{self._endpoint}{_RENDER_PATH}"
+        response = await client.post(
+            endpoint,
+            params=_build_query(views, bg_color),
+            json={"source": source},
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        images = _decode_render_response(response, len(views))
+        return {view.name: image for view, image in zip(views, images, strict=True)}
+
+    async def _render_grid(self, *, client: httpx.AsyncClient, source: str) -> bytes:
+        endpoint = f"{self._endpoint}{_RENDER_GRID_PATH}"
+        response = await client.post(
+            endpoint,
+            json={"source": source},
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        return response.content
+
     async def _process_prompt(self, *, process_sem: asyncio.Semaphore, file: Path) -> None:
-        """Render one .js submission file via POST /render/grid."""
+        """Render one .js submission file into white/gray folders plus grid.png."""
         async with process_sem:
             click.echo(f"Rendering {file}...", err=True)
             timeout = httpx.Timeout(connect=300.0, read=300.0, write=300.0, pool=300.0)
-            endpoint = f"{self._endpoint}{_RENDER_GRID_PATH}"
 
             with open(file, "r", encoding="utf-8") as f:
                 source = f.read()
+
+            prompt_dir = self._output_dir / file.stem
+            white_dir = prompt_dir / "white"
+            gray_dir = prompt_dir / "gray"
+            white_dir.mkdir(parents=True, exist_ok=True)
+            gray_dir.mkdir(parents=True, exist_ok=True)
 
             last_error: Exception | None = None
             for attempt in range(1, _MAX_ATTEMPTS + 1):
                 try:
                     async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.post(
-                            endpoint,
-                            json={"source": source},
-                            headers={"Content-Type": "application/json"},
+                        white_images, gray_images, grid_image = await asyncio.gather(
+                            self._render_views(
+                                client=client,
+                                source=source,
+                                views=WHITE_VIEWS,
+                                bg_color=WHITE_BG,
+                            ),
+                            self._render_views(
+                                client=client,
+                                source=source,
+                                views=GRAY_VIEWS,
+                                bg_color=GRAY_BG,
+                            ),
+                            self._render_grid(
+                                client=client,
+                                source=source,
+                            ),
                         )
-                        response.raise_for_status()
-                        output_file = self._output_dir / f"{file.stem}.png"
-                        with open(output_file, "wb") as out:
-                            out.write(response.content)
-                        click.echo(f"Rendered {file.name} to {output_file}", err=True)
+
+                        for view in WHITE_VIEWS:
+                            output_file = white_dir / f"{view.name}.png"
+                            with open(output_file, "wb") as out:
+                                out.write(white_images[view.name])
+
+                        for view in GRAY_VIEWS:
+                            output_file = gray_dir / f"{view.name}.png"
+                            with open(output_file, "wb") as out:
+                                out.write(gray_images[view.name])
+
+                        grid_output_file = prompt_dir / "grid.png"
+                        with open(grid_output_file, "wb") as out:
+                            out.write(grid_image)
+
+                        click.echo(
+                            f"Rendered {file.name} to {prompt_dir} "
+                            f"(white={len(WHITE_VIEWS)}, gray={len(GRAY_VIEWS)}, grid=1)",
+                            err=True,
+                        )
                         return
                 except Exception as e:
                     last_error = e
@@ -107,13 +239,13 @@ class Renderer:
                         msg = (
                             f"Renderer HTTP error for file {file}: "
                             f"{e.response.status_code if e.response is not None else 'unknown status'} "
-                            f"from {endpoint}. Response: {response_text!r} "
+                            f"from render endpoints. Response: {response_text!r} "
                             f"(attempt {attempt}/{_MAX_ATTEMPTS})"
                         )
                     else:
                         msg = (
                             f"Renderer request error for file {file}: "
-                            f"{type(e).__name__}: {e!r} while calling {endpoint} "
+                            f"{type(e).__name__}: {e!r} while calling render endpoints "
                             f"(attempt {attempt}/{_MAX_ATTEMPTS})"
                         )
                     logger.error(msg)
