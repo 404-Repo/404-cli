@@ -331,9 +331,99 @@ On failure, outputs error JSON:
 - The output directory is created automatically if it doesn't exist
 - Render progress and status messages are output to stderr, while JSON results go to stdout
 
+### Start Judge
+
+The `start-judge` command deploys and starts the VLLM judge container on Targon. It outputs the container URL which can then be used with the `judge` command.
+
+**Options:**
+- `--targon-api-key` (required): Targon API key for authentication
+
+**Example:**
+```bash
+404-cli start-judge \
+  --targon-api-key your-targon-api-key-here
+```
+
+**Output:**
+On success, outputs JSON with the container URL:
+```json
+{"success": true, "container_url": "https://judge-abc123.targon.io"}
+```
+
+The container URL is also displayed on stderr and should be used as the `--endpoint` parameter for the `judge` command.
+
+**Notes:**
+- Uses the predefined image: `vllm/vllm-openai:v0.20.0`
+- Serves `zai-org/GLM-4.6V-Flash` as `glm-4.6v-flash`
+- Deploys on `rtx6000b-small`
+- Uses port 8000 and health check path `/health`
+
+### Judge Models
+
+The `judge` command compares two rendered image sets with the multi-stage duel judge. It prints every stage result to stderr and saves all duel records to an output folder.
+
+It expects both image directories to be grouped by prompt stem, matching the renderer output structure:
+```text
+images-a/<stem>/grid.png
+images-a/<stem>/white/front.png
+images-a/<stem>/white/front_left.png
+images-a/<stem>/white/front_right.png
+images-a/<stem>/white/front_above.png
+images-a/<stem>/white/right.png
+images-a/<stem>/white/back.png
+images-a/<stem>/white/left.png
+images-a/<stem>/white/top_down.png
+images-a/<stem>/gray/front.png
+```
+
+**Options:**
+- `--prompts-json` (required): Path to JSON file with `prompts[].stem` and `prompts[].image_url`
+- `--image-dir-1` (required): Directory containing the first rendered image set, grouped by stem
+- `--image-dir-2` (required): Directory containing the second rendered image set, grouped by stem
+- `--endpoint` (required): Judge endpoint URL (obtained from `start-judge`; `/v1` is appended when omitted)
+- `--seed` (required): Seed for deterministic VLM calls
+- `--output-dir` (optional, default: "judge-results"): Folder for per-duel JSON files and `duels.json`
+- `--concurrency` (optional, default: 1): Maximum number of duels judged concurrently
+
+**Example:**
+
+First, start the judge container:
+```bash
+404-cli start-judge \
+  --targon-api-key your-targon-api-key-here
+```
+
+Note the container URL from the output (e.g., `https://judge-abc123.targon.io`).
+
+Then, judge two rendered image sets:
+```bash
+404-cli judge \
+  --prompts-json prompts.json \
+  --image-dir-1 images-a \
+  --image-dir-2 images-b \
+  --endpoint https://judge-abc123.targon.io \
+  --seed 42 \
+  --output-dir judge-results
+```
+
+**Output:**
+On success, outputs JSON:
+```json
+{"success": true, "output_dir": "judge-results"}
+```
+
+Judge records are saved as:
+- `judge-results/<stem>.json`
+- `judge-results/duels.json`
+
+**Notes:**
+- Stage logs include `S1`, `S2`, gated `S3` when reached, `S4`, and the final winner
+- If a stage short-circuits the duel, later gated stages are not run or logged
+- Missing rendered previews produce win-by-default or draw records
+
 ### Stop Pods
 
-The `stop-pods` command stops all running generator and render containers on Targon. This is useful for cleaning up resources after completing generation tasks.
+The `stop-pods` command stops all running generator, render, and judge containers on Targon. This is useful for cleaning up resources after completing generation tasks.
 
 **Options:**
 - `--targon-api-key` (required): Targon API key for authentication
@@ -348,5 +438,5 @@ The `stop-pods` command stops all running generator and render containers on Tar
 The command outputs status messages to stderr as it stops each container. No JSON output is produced on success.
 
 **Notes:**
-- Only containers with names matching "generator" or "render" are stopped
+- Only containers with names matching "generator", "render", or "judge" are stopped
 - If a container is already stopped, it will be skipped
