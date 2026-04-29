@@ -187,17 +187,26 @@ The container URL is also displayed on stderr and should be used as the `--endpo
 
 ### Generate Models
 
-The `generate` command processes a list of prompt images and generates 3D models (.ply files) using a generator endpoint. It:
-1. Reads prompts (image URLs) from a text file
-2. Downloads each prompt image from its URL
-3. Generates a 3D model for each prompt using the generator endpoint
-4. Saves all generated models as .ply files to the local filesystem
+The `generate` command submits a prompt batch to the generator service and downloads generated `.js` files. It:
+1. Reads prompts from a JSON file (`--prompts-json`) with prompt objects containing `image_url` and optional `stem`
+2. Submits the full prompt batch to `/generate`
+3. Polls `/status` until generation reaches `complete`
+4. Downloads `/results` ZIP and saves generated `.js` files locally
 
 **Options:**
-- `--prompts-file` (required): Path to a text file containing one image URL per line
+- `--prompts-json` (required): Path to JSON file with format:
+  ```json
+  {
+    "prompts": [
+      {"stem": "a1b2c3d4", "image_url": "https://storage.example.com/prompts/a1b2c3d4.jpg"},
+      {"stem": "e5f6g7h8", "image_url": "https://storage.example.com/prompts/e5f6g7h8.png"}
+    ],
+    "seed": 42
+  }
+  ```
 - `--endpoint` (required): Generator endpoint URL (obtained from `start-generator` command)
-- `--seed` (required): Seed value for generation (ensures reproducibility)
-- `--output-folder` (optional, default: "results"): Local folder path where generated .ply files will be saved
+- `--seed` (optional): Seed value override. If omitted, uses `seed` from the prompts JSON
+- `--output-folder` (optional, default: "results"): Local folder path where generated .js files will be saved
 
 **Example:**
 
@@ -210,20 +219,21 @@ First, start the generator container:
 
 Note the container URL from the output (e.g., `https://generator-abc123.targon.io`).
 
-Then, create a file `prompts.txt` with image URLs.
+Then, create a prompts JSON file (for example `example_prompts.json`).
 
 Run the generate command:
 ```bash
 404-cli generate \
-  --prompts-file prompts.txt \
+  --prompts-json example_prompts.json \
   --endpoint https://generator-abc123.targon.io \
-  --seed 42 \
   --output-folder results
 ```
 
+When `stem` is provided in JSON, output files are named `<stem>.js`.
+
 The generated files will be saved locally at paths like:
-- `results/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.ply`
-- `results/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.ply`
+- `results/22de4efc4723f624b92889e8c79c9b4fb903e8a6b5907c9f0727ede8f2ccab47.js`
+- `results/8c6c463fe4d3d9ed969a71ca8171b2571bb14f5fae057cf12d3743014d46c747.js`
 - etc.
 
 **Output:**
@@ -265,19 +275,19 @@ On success, outputs JSON with the container URL:
 The container URL is also displayed on stderr and should be used as the `--endpoint` parameter for the `render` command.
 
 **Notes:**
-- Uses the predefined image: `ghcr.io/404-repo/render-service:latest`
-- Deploys on `rtx4090-small` resource type
+- Uses the predefined image: `europe-west3-docker.pkg.dev/gen-456515/active-competition/render-service-js:0.4.3`
+- Deploys on `cpu-small` resource type
 - Uses port 8000 and health check path `/health`
 
 ### Render Models
 
-The `render` command processes .ply files and renders them to PNG images using a renderer endpoint. It:
-1. Scans the specified directory for all .ply and .glb files
-2. Sends each .ply and .glb file to the renderer endpoints
+The `render` command processes JavaScript submission files (`.js`) and renders them to PNG images using a renderer endpoint. It:
+1. Scans the specified directory for all `.js` files
+2. Sends each file as JSON `{ "source": "<js code>" }` to the renderer endpoint (`/render/grid`)
 3. Saves the rendered PNG images to the output directory
 
 **Options:**
-- `--data-dir` (required): Path to the directory containing the .ply files to render
+- `--data-dir` (required): Path to the directory containing the `.js` submission files to render
 - `--endpoint` (required): Renderer endpoint URL (obtained from `start-renderer` command)
 - `--output-dir` (optional, default: "results"): Path to the directory where rendered PNG images will be saved
 
@@ -291,7 +301,7 @@ First, start the renderer container:
 
 Note the container URL from the output (e.g., `https://render-abc123.targon.io`).
 
-Then, render the .ply files:
+Then, render the `.js` files:
 ```bash
 404-cli render \
   --data-dir results \
@@ -317,13 +327,13 @@ On failure, outputs error JSON:
 
 **Notes:**
 - Files are processed with concurrency control (up to 2 concurrent renders)
-- Each .ply file is rendered to a PNG with the same base filename
+- Each .js file is rendered to a PNG with the same base filename
 - The output directory is created automatically if it doesn't exist
 - Render progress and status messages are output to stderr, while JSON results go to stdout
 
 ### Stop Pods
 
-The `stop-pods` command stops all running generator, render, and judge containers on Targon. This is useful for cleaning up resources after completing generation tasks.
+The `stop-pods` command stops all running generator and render containers on Targon. This is useful for cleaning up resources after completing generation tasks.
 
 **Options:**
 - `--targon-api-key` (required): Targon API key for authentication
@@ -338,117 +348,5 @@ The `stop-pods` command stops all running generator, render, and judge container
 The command outputs status messages to stderr as it stops each container. No JSON output is produced on success.
 
 **Notes:**
-- Only containers with names matching "generator", "render", or "judge" are stopped
+- Only containers with names matching "generator" or "render" are stopped
 - If a container is already stopped, it will be skipped
-
-### Start Judge
-
-The `start-judge` command deploys and starts a judge container on Targon. It deploys the container using the predefined vLLM image with the GLM-4.1V vision model and outputs the container URL which can then be used with the `judge` command.
-
-**Options:**
-- `--targon-api-key` (required): Targon API key for authentication
-
-**Example:**
-```bash
-404-cli start-judge \
-  --targon-api-key your-targon-api-key-here
-```
-
-**Output:**
-On success, outputs JSON with the container URL:
-```json
-{"success": true, "container_url": "https://serv-u-1325748-s7qx21sp30zou6ik.serverless.targon.com"}
-```
-
-The container URL is also displayed on stderr and should be used as the `--endpoint` parameter for the `judge` command.
-
-**Notes:**
-- Uses the predefined image: `vllm/vllm-openai:latest`
-- Deploys on `rtx4090-small` resource type
-- Uses port 8000 and health check path `/health`
-- Runs the GLM-4.1V-9B-Thinking vision model for evaluating 3D models
-
-### Judge Models
-
-The `judge` command evaluates two sets of rendered 3D model images against their prompt images using a vision language model (VLM). It:
-1. Reads prompt image URLs from a text file
-2. Loads corresponding rendered images from two directories (image_dir_1 and image_dir_2)
-3. For each prompt, runs a position-balanced duel evaluation (two calls with swapped model positions)
-4. Calculates average penalties to determine the winner
-5. Saves all duel results to a JSON file
-
-**Options:**
-- `--prompt-file` (required): Path to a text file containing one prompt image URL per line
-- `--image-dir-1` (required): Path to the directory containing the first set of rendered PNG images
-- `--image-dir-2` (required): Path to the directory containing the second set of rendered PNG images
-- `--endpoint` (required): Judge endpoint URL (obtained from `start-judge` command)
-- `--seed` (required): Seed value for evaluation (ensures reproducibility)
-- `--output-file` (optional, default: "duels.json"): Path to the JSON file where duel results will be saved
-
-**Important:** The image filenames in both directories must match the prompt key (derived from the URL filename). For example, if the prompt URL is `https://sn12domain.org/fb99ec66676f56b5b905b1859db0bc2ea430658fb66903faac86243cdff29ba6.png`, then both `image-dir-1` and `image-dir-2` must contain a file named `fb99ec66676f56b5b905b1859db0bc2ea430658fb66903faac86243cdff29ba6.png` for the duel to work correctly.
-
-**Example:**
-
-First, start the judge container:
-```bash
-404-cli start-judge \
-  --targon-api-key your-targon-api-key-here
-```
-
-Note the container URL from the output (e.g., `https://serv-u-1325748-s7qx21sp30zou6ik.serverless.targon.com`).
-
-Then, create a file `prompts.txt` with prompt image URLs (one per line):
-```
-https://sn12domain.org/fb99ec66676f56b5b905b1859db0bc2ea430658fb66903faac86243cdff29ba6.png
-https://sn12domain.org/fa800ddb1f6a05bb57d7cf994b167b2656139aa030e22eb9441cb74cae76a80b.png
-```
-
-Ensure you have rendered images in two directories (e.g., `images` and `images_2`) with filenames matching the prompt keys (derived from the URL filenames).
-
-Run the judge command:
-```bash
-404-cli judge \
-  --prompt-file prompts.txt \
-  --image-dir-1 images \
-  --image-dir-2 images_2 \
-  --endpoint https://serv-u-1325748-s7qx21sp30zou6ik.serverless.targon.com \
-  --seed 12345 \
-  --output-file duels.json
-```
-
-**Output:**
-On success, outputs JSON:
-```json
-{"success": true, "output_file": "duels.json"}
-```
-
-The duel results are saved to the specified JSON file (default: `duels.json`) with the following structure:
-```json
-{
-  "fb99ec66676f56b5b905b1859db0bc2ea430658fb66903faac86243cdff29ba6": {
-    "outcome": 0,
-    "issues": "First model has minor shape differences and some detail inconsistencies compared to the prompt, second model matches perfectly"
-  },
-  "fa800ddb1f6a05bb57d7cf994b167b2656139aa030e22eb9441cb74cae76a80b": {
-    "outcome": -1,
-    "issues": "First model matches better than second model"
-  }
-}
-```
-
-Where:
-- Keys are prompt names (derived from the URL filenames)
-- `outcome`: `-1` = first model wins, `0` = draw, `1` = second model wins
-- `issues`: Human-readable summary of the evaluation
-
-On failure, outputs error JSON:
-```json
-{"success": false, "error": "Error message here"}
-```
-
-**Notes:**
-- Uses position-balanced evaluation: each prompt is evaluated twice with swapped model positions to reduce position bias
-- The judge uses a vision language model (GLM-4.1V-9B-Thinking) to compare rendered 3D model images against the prompt
-- Image files must be PNG format and filenames must match the prompt keys (derived from URL filenames)
-- Evaluation progress and judge responses are output to stderr, while JSON results go to stdout
-- The output file is created automatically if it doesn't exist

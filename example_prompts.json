@@ -1,0 +1,13 @@
+{
+  "prompts": [
+    {
+      "stem": "a1b2c3d4",
+      "image_url": "https://storage.example.com/prompts/a1b2c3d4.jpg"
+    },
+    {
+      "stem": "e5f6g7h8",
+      "image_url": "https://storage.example.com/prompts/e5f6g7h8.png"
+    }
+  ],
+  "seed": 42
+}

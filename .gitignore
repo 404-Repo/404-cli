@@ -211,3 +211,8 @@ prompts.txt
 results/
 images*/
 duels.json
+
+# Local / machine-specific
+.DS_Store
+prompts.json
+TEST_ALL_COMMANDS_PLAN.md
