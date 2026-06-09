@@ -67,9 +67,13 @@ class Generator:
                 f"(see failed.json / _failed.json in {self.output_folder}):\n{failed_json}"
             )
         if missing:
-            raise RuntimeError(f"Missing generated outputs for stems: {', '.join(missing)}")
+            raise RuntimeError(
+                f"Missing generated outputs for stems: {', '.join(missing)}"
+            )
 
-        self.echo(f"Generation completed: saved {len(saved)} .js files to {self.output_folder}")
+        self.echo(
+            f"Generation completed: saved {len(saved)} .js files to {self.output_folder}"
+        )
 
     def _normalize_prompt(self, prompt: PromptItem) -> dict[str, str]:
         stem = prompt.stem or self._stem_from_url(prompt.image_url)
@@ -121,7 +125,9 @@ class Generator:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                response = await client.post(f"{self.endpoint}/generate", json=request_body)
+                response = await client.post(
+                    f"{self.endpoint}/generate", json=request_body
+                )
                 if response.status_code == 409:
                     detail = response.json()
                     current_status = detail.get("current_status", "unknown")
@@ -174,7 +180,9 @@ class Generator:
                         self.echo("Generation in progress...")
                     last_progress = current
             elif status in (STATUS_READY, STATUS_WARMING_UP):
-                self.echo(f"Generator status changed to {status}; waiting for completion")
+                self.echo(
+                    f"Generator status changed to {status}; waiting for completion"
+                )
             else:
                 raise RuntimeError(f"Unexpected status while generating: {status}")
 
@@ -188,7 +196,9 @@ class Generator:
         total_size = 0
         chunks: list[bytes] = []
 
-        async with client.stream("GET", f"{self.endpoint}/results", timeout=read_timeout) as response:
+        async with client.stream(
+            "GET", f"{self.endpoint}/results", timeout=read_timeout
+        ) as response:
             if response.status_code == 409:
                 detail = "results not available"
                 try:

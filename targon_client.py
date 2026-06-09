@@ -65,7 +65,9 @@ class TargonClient:
     ) -> list[ServerlessResourceListItem]:
         """List containers, optionally filtered by the exact name or prefix."""
         try:
-            containers: list[ServerlessResourceListItem] = await self.client.async_serverless.list_container()
+            containers: list[ServerlessResourceListItem] = (
+                await self.client.async_serverless.list_container()
+            )
             if name:
                 containers = [c for c in containers if c.name == name]
             elif prefix:
@@ -137,5 +139,7 @@ class TargonClient:
         for c in containers:
             await self.delete_container(c.uid)
         if containers:
-            logger.info(f"Deleted {len(containers)} containers matching prefix '{prefix}'")
+            logger.info(
+                f"Deleted {len(containers)} containers matching prefix '{prefix}'"
+            )
         return len(containers)
