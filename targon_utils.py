@@ -44,7 +44,11 @@ async def wait_for_visible(
         await asyncio.sleep(check_interval)
         time_elapsed = asyncio.get_running_loop().time() - start
 
-    _log(f"Container {name} not visible within {timeout}s. Timeout reached.", echo, "warning")
+    _log(
+        f"Container {name} not visible within {timeout}s. Timeout reached.",
+        echo,
+        "warning",
+    )
     return None
 
 
@@ -58,7 +62,9 @@ async def wait_for_healthy(
 ) -> bool:
     """Wait for the container health endpoint to return 200 (stage 2)."""
     # If health_check_path is a full URL, use it directly; otherwise append to container URL
-    if health_check_path.startswith("http://") or health_check_path.startswith("https://"):
+    if health_check_path.startswith("http://") or health_check_path.startswith(
+        "https://"
+    ):
         health_url = health_check_path
     else:
         health_url = f"{url}{health_check_path}"
@@ -71,14 +77,23 @@ async def wait_for_healthy(
                 response = await http.get(health_url)
                 response.raise_for_status()
                 if response.status_code == 200:
-                    _log(f"Container at {url} healthy", echo, "info")  
+                    _log(f"Container at {url} healthy", echo, "info")
                     return True
             except Exception as e:
-                _log(f"Container not ready yet: {time_elapsed:.1f}/{timeout:.1f}s", echo, "info")
+                _log(
+                    f"Container not ready yet: {time_elapsed:.1f}/{timeout:.1f}s",
+                    echo,
+                    "info",
+                )
                 await asyncio.sleep(check_interval)
                 time_elapsed = asyncio.get_running_loop().time() - start
-    _log(f"Container at {url} not healthy within {timeout}s. Timeout reached.", echo, "error")
+    _log(
+        f"Container at {url} not healthy within {timeout}s. Timeout reached.",
+        echo,
+        "error",
+    )
     return False
+
 
 async def ensure_running_container(
     client: TargonClient,

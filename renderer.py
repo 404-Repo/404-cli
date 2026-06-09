@@ -70,7 +70,9 @@ def _build_query(views: list[View], bg_color: str) -> dict[str, str]:
     }
 
 
-def _decode_render_response(response: httpx.Response, expected_views: int) -> list[bytes]:
+def _decode_render_response(
+    response: httpx.Response, expected_views: int
+) -> list[bytes]:
     if expected_views == 1:
         return [response.content]
 
@@ -97,7 +99,9 @@ class Renderer:
 
     async def render(self) -> None:
         """Render .js files to 12 PNG views using POST /render."""
-        click.echo(f"Rendering {self._data_dir} with endpoint {self._endpoint}", err=True)
+        click.echo(
+            f"Rendering {self._data_dir} with endpoint {self._endpoint}", err=True
+        )
         tasks: list[asyncio.Task] = []
         try:
             health_url = f"{self._endpoint}/health"
@@ -126,7 +130,9 @@ class Renderer:
                 )
 
             tasks = [
-                asyncio.create_task(self._process_prompt(process_sem=process_sem, file=file))
+                asyncio.create_task(
+                    self._process_prompt(process_sem=process_sem, file=file)
+                )
                 for file in js_files
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -173,7 +179,9 @@ class Renderer:
         response.raise_for_status()
         return response.content
 
-    async def _process_prompt(self, *, process_sem: asyncio.Semaphore, file: Path) -> None:
+    async def _process_prompt(
+        self, *, process_sem: asyncio.Semaphore, file: Path
+    ) -> None:
         """Render one .js submission file into white/gray folders plus grid.png."""
         async with process_sem:
             click.echo(f"Rendering {file}...", err=True)
@@ -235,7 +243,9 @@ class Renderer:
                     last_error = e
                     retryable = _is_retryable(e)
                     if isinstance(e, httpx.HTTPStatusError):
-                        response_text = e.response.text[:1000] if e.response is not None else ""
+                        response_text = (
+                            e.response.text[:1000] if e.response is not None else ""
+                        )
                         msg = (
                             f"Renderer HTTP error for file {file}: "
                             f"{e.response.status_code if e.response is not None else 'unknown status'} "

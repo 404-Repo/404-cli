@@ -324,7 +324,10 @@ def _neutral_side_guard() -> SideGuardVerdict:
 
 
 def _s2cl_build_verify_user_prompt(checklist: PromptChecklist) -> str:
-    lines = [f"  {i + 1}. [{f.category}] {f.description}" for i, f in enumerate(checklist.features)]
+    lines = [
+        f"  {i + 1}. [{f.category}] {f.description}"
+        for i, f in enumerate(checklist.features)
+    ]
     checks_hint = ", ".join(
         f'{{"feature": "{f.description}", "match": "yes"|"partial"|"no", "note": "<brief>"}}'
         for f in checklist.features
@@ -332,9 +335,7 @@ def _s2cl_build_verify_user_prompt(checklist: PromptChecklist) -> str:
     return (
         "Below is the reference image and a checklist.\n\n"
         f"Main object: {checklist.main_object}\n"
-        "Features to check:\n"
-        + "\n".join(lines)
-        + "\n\n"
+        "Features to check:\n" + "\n".join(lines) + "\n\n"
         "Look at the four views of this 3D model and verify each feature.\n\n"
         "Rules:\n"
         "- Check each feature independently using all four views\n"
@@ -395,7 +396,9 @@ async def _safe_chat_json(
             await asyncio.sleep(JSON_DEFAULT_BACKOFF_BASE * (attempt + 1))
 
     if on_failure is not None:
-        logger.error(f"{label}: all {max_retries} attempts failed; falling back to neutral")
+        logger.error(
+            f"{label}: all {max_retries} attempts failed; falling back to neutral"
+        )
         return on_failure
     raise last_err or RuntimeError(f"{label}: all retries failed")
 
@@ -435,7 +438,9 @@ def _image_url(value: str) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-async def _fetch_bytes(http: httpx.AsyncClient, url: str, timeout: float = 60.0) -> bytes | None:
+async def _fetch_bytes(
+    http: httpx.AsyncClient, url: str, timeout: float = 60.0
+) -> bytes | None:
     try:
         if not _is_http_url(url):
             path = Path(url)
@@ -448,7 +453,9 @@ async def _fetch_bytes(http: httpx.AsyncClient, url: str, timeout: float = 60.0)
         return None
 
 
-async def _load_embeddings(http: httpx.AsyncClient, views_prefix: str) -> dict[str, np.ndarray] | None:
+async def _load_embeddings(
+    http: httpx.AsyncClient, views_prefix: str
+) -> dict[str, np.ndarray] | None:
     data = await _fetch_bytes(http, _embeddings_url(views_prefix))
     if data is None:
         return None
@@ -475,13 +482,17 @@ def _read_png_rgb(data: bytes) -> tuple[int, int, int, list[list[int]]]:
         chunk = data[pos : pos + chunk_len]
         pos += chunk_len + 4
         if chunk_type == b"IHDR":
-            width, height, bit_depth, color_type, _, _, _ = struct.unpack(">IIBBBBB", chunk)
+            width, height, bit_depth, color_type, _, _, _ = struct.unpack(
+                ">IIBBBBB", chunk
+            )
         elif chunk_type == b"IDAT":
             compressed += chunk
         elif chunk_type == b"IEND":
             break
     if width is None or height is None or bit_depth != 8 or color_type not in (2, 6):
-        raise ValueError(f"Unsupported PNG: bit_depth={bit_depth}, color_type={color_type}")
+        raise ValueError(
+            f"Unsupported PNG: bit_depth={bit_depth}, color_type={color_type}"
+        )
 
     bytes_per_pixel = 3 if color_type == 2 else 4
     raw = zlib.decompress(compressed)
@@ -530,7 +541,9 @@ def _strip_issues(p: PenaltyResponse) -> dict:
     return {"penalty_1": p.penalty_1, "penalty_2": p.penalty_2}
 
 
-def _s1_messages(prompt_url: str, left_url: str, right_url: str, angle_desc: str) -> list[dict]:
+def _s1_messages(
+    prompt_url: str, left_url: str, right_url: str, angle_desc: str
+) -> list[dict]:
     return [
         {"role": "system", "content": S1_S2BV_S2AC_SYSTEM_PROMPT},
         {
@@ -542,7 +555,10 @@ def _s1_messages(prompt_url: str, left_url: str, right_url: str, angle_desc: str
                 {"type": "image_url", "image_url": {"url": _image_url(left_url)}},
                 {"type": "text", "text": "3D model 2:"},
                 {"type": "image_url", "image_url": {"url": _image_url(right_url)}},
-                {"type": "text", "text": S1_PROMPT_MATCH_USER.format(angle_desc=angle_desc)},
+                {
+                    "type": "text",
+                    "text": S1_PROMPT_MATCH_USER.format(angle_desc=angle_desc),
+                },
             ],
         },
     ]
@@ -591,7 +607,9 @@ async def _s1_run(
         json_failed = ab.issues == JSON_FAILED_MARKER or ba.issues == JSON_FAILED_MARKER
         if json_failed:
             n_json_failed += 1
-        contradictory = json_failed or ((diff_ab > 0 and diff_ba < 0) or (diff_ab < 0 and diff_ba > 0))
+        contradictory = json_failed or (
+            (diff_ab > 0 and diff_ba < 0) or (diff_ab < 0 and diff_ba > 0)
+        )
         angles.append(
             {
                 "theta": theta,
@@ -651,7 +669,10 @@ def _s1_aggregate(detail: dict) -> tuple[str, str]:
         return "draw", f"wpA={wpa:.2f} wpB={wpb:.2f} |diff|={abs(diff):.2f} -> draw"
     consistency, w_a, w_b, n_signed = _s1_direction_consistency(consistent)
     if n_signed >= S1_SPLIT_MIN_SIGNED and consistency < S1_SPLIT_CONSISTENCY_THRESH:
-        return "draw", f"split wA={w_a:.1f} wB={w_b:.1f} consistency={consistency:.2f} -> draw"
+        return (
+            "draw",
+            f"split wA={w_a:.1f} wB={w_b:.1f} consistency={consistency:.2f} -> draw",
+        )
     choice = "A" if diff < 0 else "B"
     return choice, f"wpA={wpa:.2f} wpB={wpb:.2f} diff={diff:+.2f} -> {choice}"
 
@@ -675,9 +696,15 @@ def _s2bv_messages(prompt_url: str, left_url: str, right_url: str) -> list[dict]
             "content": [
                 {"type": "text", "text": "Image prompt to generate 3D model:"},
                 {"type": "image_url", "image_url": {"url": _image_url(prompt_url)}},
-                {"type": "text", "text": "First 3D model (single best prompt-matching view):"},
+                {
+                    "type": "text",
+                    "text": "First 3D model (single best prompt-matching view):",
+                },
                 {"type": "image_url", "image_url": {"url": _image_url(left_url)}},
-                {"type": "text", "text": "Second 3D model (single best prompt-matching view):"},
+                {
+                    "type": "text",
+                    "text": "Second 3D model (single best prompt-matching view):",
+                },
                 {"type": "image_url", "image_url": {"url": _image_url(right_url)}},
                 {"type": "text", "text": S2BV_USER_PROMPT},
             ],
@@ -705,8 +732,22 @@ async def _s2bv_run(
     a_url = _white_url(left_views, name_a)
     b_url = _white_url(right_views, name_b)
     ab, ba = await asyncio.gather(
-        _safe_chat_json(vlm, _s2bv_messages(prompt_url, a_url, b_url), PenaltyResponse, label="s2bv_ab", seed=seed, on_failure=_neutral_penalty()),
-        _safe_chat_json(vlm, _s2bv_messages(prompt_url, b_url, a_url), PenaltyResponse, label="s2bv_ba", seed=seed, on_failure=_neutral_penalty()),
+        _safe_chat_json(
+            vlm,
+            _s2bv_messages(prompt_url, a_url, b_url),
+            PenaltyResponse,
+            label="s2bv_ab",
+            seed=seed,
+            on_failure=_neutral_penalty(),
+        ),
+        _safe_chat_json(
+            vlm,
+            _s2bv_messages(prompt_url, b_url, a_url),
+            PenaltyResponse,
+            label="s2bv_ba",
+            seed=seed,
+            on_failure=_neutral_penalty(),
+        ),
     )
     ab = cast(PenaltyResponse, ab)
     ba = cast(PenaltyResponse, ba)
@@ -738,12 +779,28 @@ def _s2ac_messages(prompt_url: str, left_url: str, right_url: str) -> list[dict]
     ]
 
 
-async def _s2ac_run(vlm: AsyncOpenAI, prompt_url: str, left_views: str, right_views: str, seed: int) -> dict:
+async def _s2ac_run(
+    vlm: AsyncOpenAI, prompt_url: str, left_views: str, right_views: str, seed: int
+) -> dict:
     a_url = _grid_url(left_views)
     b_url = _grid_url(right_views)
     ab, ba = await asyncio.gather(
-        _safe_chat_json(vlm, _s2ac_messages(prompt_url, a_url, b_url), PenaltyResponse, label="s2ac_ab", seed=seed, on_failure=_neutral_penalty()),
-        _safe_chat_json(vlm, _s2ac_messages(prompt_url, b_url, a_url), PenaltyResponse, label="s2ac_ba", seed=seed, on_failure=_neutral_penalty()),
+        _safe_chat_json(
+            vlm,
+            _s2ac_messages(prompt_url, a_url, b_url),
+            PenaltyResponse,
+            label="s2ac_ab",
+            seed=seed,
+            on_failure=_neutral_penalty(),
+        ),
+        _safe_chat_json(
+            vlm,
+            _s2ac_messages(prompt_url, b_url, a_url),
+            PenaltyResponse,
+            label="s2ac_ba",
+            seed=seed,
+            on_failure=_neutral_penalty(),
+        ),
     )
     ab = cast(PenaltyResponse, ab)
     ba = cast(PenaltyResponse, ba)
@@ -755,7 +812,9 @@ async def _s2ac_run(vlm: AsyncOpenAI, prompt_url: str, left_views: str, right_vi
     }
 
 
-async def _s2cl_decompose(vlm: AsyncOpenAI, prompt_url: str, seed: int) -> PromptChecklist:
+async def _s2cl_decompose(
+    vlm: AsyncOpenAI, prompt_url: str, seed: int
+) -> PromptChecklist:
     messages: list[dict] = [
         {"role": "system", "content": S2CL_DECOMPOSE_SYSTEM_PROMPT},
         {
@@ -767,7 +826,14 @@ async def _s2cl_decompose(vlm: AsyncOpenAI, prompt_url: str, seed: int) -> Promp
             ],
         },
     ]
-    result = await _safe_chat_json(vlm, messages, PromptChecklist, label="s2cl_decompose", seed=seed, max_tokens=400)
+    result = await _safe_chat_json(
+        vlm,
+        messages,
+        PromptChecklist,
+        label="s2cl_decompose",
+        seed=seed,
+        max_tokens=400,
+    )
     return cast(PromptChecklist, result)
 
 
@@ -791,7 +857,14 @@ async def _s2cl_verify(
             ],
         },
     ]
-    result = await _safe_chat_json(vlm, messages, VerificationResult, label="s2cl_verify", seed=seed, max_tokens=600)
+    result = await _safe_chat_json(
+        vlm,
+        messages,
+        VerificationResult,
+        label="s2cl_verify",
+        seed=seed,
+        max_tokens=600,
+    )
     return cast(VerificationResult, result)
 
 
@@ -803,25 +876,40 @@ def _s2cl_score(result: VerificationResult) -> int:
 def _strip_verify(result: VerificationResult) -> dict:
     return {
         "main_object_correct": result.main_object_correct,
-        "checks": [{"feature": check.feature, "match": check.match} for check in result.checks],
+        "checks": [
+            {"feature": check.feature, "match": check.match} for check in result.checks
+        ],
     }
 
 
-async def _s2cl_run(vlm: AsyncOpenAI, prompt_url: str, left_views: str, right_views: str, seed: int) -> dict:
+async def _s2cl_run(
+    vlm: AsyncOpenAI, prompt_url: str, left_views: str, right_views: str, seed: int
+) -> dict:
     try:
         checklist = await _s2cl_decompose(vlm, prompt_url, seed)
     except Exception as exc:
         logger.error(f"s2cl decompose failed: {exc!r}")
-        return {"decompose_failed": True, "score_a": 0, "score_b": 0, "gap": 0, "choice": "draw"}
+        return {
+            "decompose_failed": True,
+            "score_a": 0,
+            "score_b": 0,
+            "gap": 0,
+            "choice": "draw",
+        }
     try:
         verify_a, verify_b = await asyncio.gather(
             _s2cl_verify(vlm, prompt_url, _grid_url(left_views), checklist, seed + 100),
-            _s2cl_verify(vlm, prompt_url, _grid_url(right_views), checklist, seed + 200),
+            _s2cl_verify(
+                vlm, prompt_url, _grid_url(right_views), checklist, seed + 200
+            ),
         )
     except Exception as exc:
         logger.error(f"s2cl verify failed: {exc!r}")
         return {
-            "checklist": {"main_object": checklist.main_object, "features": [f.description for f in checklist.features]},
+            "checklist": {
+                "main_object": checklist.main_object,
+                "features": [f.description for f in checklist.features],
+            },
             "verify_failed": True,
             "score_a": 0,
             "score_b": 0,
@@ -832,17 +920,26 @@ async def _s2cl_run(vlm: AsyncOpenAI, prompt_url: str, left_views: str, right_vi
     score_b = _s2cl_score(verify_b)
     gap = score_a - score_b
     return {
-        "checklist": {"main_object": checklist.main_object, "features": [f.description for f in checklist.features]},
+        "checklist": {
+            "main_object": checklist.main_object,
+            "features": [f.description for f in checklist.features],
+        },
         "verify_a": _strip_verify(verify_a),
         "verify_b": _strip_verify(verify_b),
         "score_a": score_a,
         "score_b": score_b,
         "gap": gap,
-        "choice": "A" if gap >= S2_CHECKLIST_GAP_THRESHOLD else "B" if gap <= -S2_CHECKLIST_GAP_THRESHOLD else "draw",
+        "choice": (
+            "A"
+            if gap >= S2_CHECKLIST_GAP_THRESHOLD
+            else "B" if gap <= -S2_CHECKLIST_GAP_THRESHOLD else "draw"
+        ),
     }
 
 
-def _s2_penalty_vote(raw: dict | None, min_gap: float) -> tuple[str | None, float | None]:
+def _s2_penalty_vote(
+    raw: dict | None, min_gap: float
+) -> tuple[str | None, float | None]:
     if raw is None:
         return None, None
     diff = float(raw["penalty_a"]) - float(raw["penalty_b"])
@@ -851,7 +948,9 @@ def _s2_penalty_vote(raw: dict | None, min_gap: float) -> tuple[str | None, floa
     return ("A" if diff < 0 else "B"), diff
 
 
-def _s2_checklist_vote(detail: dict | None, min_gap: int) -> tuple[str | None, int | None]:
+def _s2_checklist_vote(
+    detail: dict | None, min_gap: int
+) -> tuple[str | None, int | None]:
     if detail is None:
         return None, None
     gap = int(detail.get("gap", 0))
@@ -860,7 +959,9 @@ def _s2_checklist_vote(detail: dict | None, min_gap: int) -> tuple[str | None, i
     return ("A" if gap > 0 else "B"), gap
 
 
-def _s2_strong_voter_choice(bv_diff: float | None, cl_gap: int | None) -> tuple[str | None, str | None]:
+def _s2_strong_voter_choice(
+    bv_diff: float | None, cl_gap: int | None
+) -> tuple[str | None, str | None]:
     candidates: list[tuple[str, str]] = []
     if bv_diff is not None and abs(bv_diff) >= S2_STRONG_BV_GAP:
         candidates.append(("A" if bv_diff < 0 else "B", f"bv|{bv_diff:+.1f}|"))
@@ -871,7 +972,9 @@ def _s2_strong_voter_choice(bv_diff: float | None, cl_gap: int | None) -> tuple[
     return candidates[0][0], "+".join(c[1] for c in candidates)
 
 
-def _s2_consensus(votes: list[str | None], min_agree: int) -> tuple[str, dict[str, int]]:
+def _s2_consensus(
+    votes: list[str | None], min_agree: int
+) -> tuple[str, dict[str, int]]:
     counts: Counter = Counter(v for v in votes if v)
     if not counts:
         return "draw", dict(counts)
@@ -913,7 +1016,12 @@ def _foreground_stats(rgb_pngs: list[bytes]) -> dict:
                 if luma > S3_PALE_LUMA_MIN and saturation < S3_PALE_SAT_MAX:
                     pale += 1
     if foreground == 0:
-        return {"foreground_samples": 0, "pale_fraction": 0.0, "grayish_fraction": 0.0, "mean_luma": 0.0}
+        return {
+            "foreground_samples": 0,
+            "pale_fraction": 0.0,
+            "grayish_fraction": 0.0,
+            "mean_luma": 0.0,
+        }
     return {
         "foreground_samples": foreground,
         "pale_fraction": pale / foreground,
@@ -923,7 +1031,10 @@ def _foreground_stats(rgb_pngs: list[bytes]) -> dict:
 
 
 def _white_unsafe(stats: dict) -> bool:
-    return bool(stats["pale_fraction"] >= S3_PALE_FRACTION_MIN and stats["grayish_fraction"] >= S3_GRAYISH_FRACTION_MIN)
+    return bool(
+        stats["pale_fraction"] >= S3_PALE_FRACTION_MIN
+        and stats["grayish_fraction"] >= S3_GRAYISH_FRACTION_MIN
+    )
 
 
 async def _s3_run(
@@ -936,7 +1047,9 @@ async def _s3_run(
 ) -> dict:
     a_gray_url = _gray_url(left_views, "front")
     b_gray_url = _gray_url(right_views, "front")
-    a_png, b_png = await asyncio.gather(_fetch_bytes(http, a_gray_url), _fetch_bytes(http, b_gray_url))
+    a_png, b_png = await asyncio.gather(
+        _fetch_bytes(http, a_gray_url), _fetch_bytes(http, b_gray_url)
+    )
     if a_png is None or b_png is None:
         return {"fired": False, "choice": None, "reason": "gray PNGs unavailable"}
     try:
@@ -945,7 +1058,12 @@ async def _s3_run(
         logger.warning(f"s3 foreground stats failed: {exc}")
         return {"fired": False, "choice": None, "reason": "stats parse failed"}
     if not _white_unsafe(stats):
-        return {"stats": stats, "fired": False, "choice": None, "reason": "gate did not fire"}
+        return {
+            "stats": stats,
+            "fired": False,
+            "choice": None,
+            "reason": "gate did not fire",
+        }
 
     user_prompt = S1_PROMPT_MATCH_USER.format(angle_desc=S3_FRONT_DESC)
 
@@ -967,8 +1085,26 @@ async def _s3_run(
         ]
 
     ab, ba = await asyncio.gather(
-        _safe_chat_json(vlm, _msg(a_gray_url, b_gray_url), PenaltyResponse, label="s3_gray_ab", seed=seed, max_retries=S3_VLM_MAX_RETRIES, max_tokens=S3_VLM_MAX_TOKENS, on_failure=_neutral_penalty()),
-        _safe_chat_json(vlm, _msg(b_gray_url, a_gray_url), PenaltyResponse, label="s3_gray_ba", seed=seed + 7, max_retries=S3_VLM_MAX_RETRIES, max_tokens=S3_VLM_MAX_TOKENS, on_failure=_neutral_penalty()),
+        _safe_chat_json(
+            vlm,
+            _msg(a_gray_url, b_gray_url),
+            PenaltyResponse,
+            label="s3_gray_ab",
+            seed=seed,
+            max_retries=S3_VLM_MAX_RETRIES,
+            max_tokens=S3_VLM_MAX_TOKENS,
+            on_failure=_neutral_penalty(),
+        ),
+        _safe_chat_json(
+            vlm,
+            _msg(b_gray_url, a_gray_url),
+            PenaltyResponse,
+            label="s3_gray_ba",
+            seed=seed + 7,
+            max_retries=S3_VLM_MAX_RETRIES,
+            max_tokens=S3_VLM_MAX_TOKENS,
+            on_failure=_neutral_penalty(),
+        ),
     )
     ab = cast(PenaltyResponse, ab)
     ba = cast(PenaltyResponse, ba)
@@ -997,7 +1133,9 @@ async def _s3_run(
     }
 
 
-async def _s4_ask_per_angle(vlm: AsyncOpenAI, front_url: str, angle_url: str, angle_desc: str, seed: int) -> str:
+async def _s4_ask_per_angle(
+    vlm: AsyncOpenAI, front_url: str, angle_url: str, angle_desc: str, seed: int
+) -> str:
     messages: list[dict] = [
         {"role": "system", "content": S4_SYSTEM_PROMPT},
         {
@@ -1007,7 +1145,10 @@ async def _s4_ask_per_angle(vlm: AsyncOpenAI, front_url: str, angle_url: str, an
                 {"type": "image_url", "image_url": {"url": _image_url(front_url)}},
                 {"type": "text", "text": f"Same 3D model viewed from {angle_desc}:"},
                 {"type": "image_url", "image_url": {"url": _image_url(angle_url)}},
-                {"type": "text", "text": S4_PER_ANGLE_PROMPT.format(angle_desc=angle_desc)},
+                {
+                    "type": "text",
+                    "text": S4_PER_ANGLE_PROMPT.format(angle_desc=angle_desc),
+                },
             ],
         },
     ]
@@ -1025,7 +1166,9 @@ async def _s4_ask_per_angle(vlm: AsyncOpenAI, front_url: str, angle_url: str, an
 
 
 def _s4_aggregate_side(verdicts: list[str], k_threshold: int) -> str:
-    return "garbage" if sum(1 for v in verdicts if v == "garbage") >= k_threshold else "ok"
+    return (
+        "garbage" if sum(1 for v in verdicts if v == "garbage") >= k_threshold else "ok"
+    )
 
 
 def _s4_step_down(primary: str, side_a: str, side_b: str) -> tuple[str, str]:
@@ -1046,7 +1189,9 @@ def _s4_step_down(primary: str, side_a: str, side_b: str) -> tuple[str, str]:
     return primary, "primary"
 
 
-async def _s4_run(vlm: AsyncOpenAI, left_views: str, right_views: str, primary: str, seed: int) -> dict:
+async def _s4_run(
+    vlm: AsyncOpenAI, left_views: str, right_views: str, primary: str, seed: int
+) -> dict:
     async def _angle_verdicts(views_prefix: str, seed_off: int) -> list[dict]:
         front_url = _white_url(views_prefix, S4_FRONT_LABEL)
 
@@ -1060,9 +1205,16 @@ async def _s4_run(vlm: AsyncOpenAI, left_views: str, right_views: str, primary: 
             )
             return {"label": label, "verdict": verdict}
 
-        return await asyncio.gather(*[_one(label, desc, off * 100) for off, (label, desc) in enumerate(S4_SIDE_ANGLES)])
+        return await asyncio.gather(
+            *[
+                _one(label, desc, off * 100)
+                for off, (label, desc) in enumerate(S4_SIDE_ANGLES)
+            ]
+        )
 
-    angles_a, angles_b = await asyncio.gather(_angle_verdicts(left_views, 5000), _angle_verdicts(right_views, 6000))
+    angles_a, angles_b = await asyncio.gather(
+        _angle_verdicts(left_views, 5000), _angle_verdicts(right_views, 6000)
+    )
     side_a = _s4_aggregate_side([r["verdict"] for r in angles_a], S4_K_THRESHOLD)
     side_b = _s4_aggregate_side([r["verdict"] for r in angles_b], S4_K_THRESHOLD)
     choice, source = _s4_step_down(primary, side_a, side_b)
@@ -1081,7 +1233,13 @@ async def _s4_run(vlm: AsyncOpenAI, left_views: str, right_views: str, primary: 
     }
 
 
-async def _explain_run(vlm: AsyncOpenAI, prompt_url: str, left_grid_url: str, right_grid_url: str, seed: int) -> str:
+async def _explain_run(
+    vlm: AsyncOpenAI,
+    prompt_url: str,
+    left_grid_url: str,
+    right_grid_url: str,
+    seed: int,
+) -> str:
     messages: list[dict] = [
         {"role": "system", "content": EXPLAIN_SYSTEM_PROMPT},
         {
@@ -1118,7 +1276,10 @@ def _slim_s1(s1: dict, choice: str) -> dict:
         "choice": choice,
         "n_total": s1["n_total"],
         "n_consistent": s1["n_consistent"],
-        "angles": [{"label": a["label"], "pen_a": a["pen_a"], "pen_b": a["pen_b"]} for a in s1["angles"]],
+        "angles": [
+            {"label": a["label"], "pen_a": a["pen_a"], "pen_b": a["pen_b"]}
+            for a in s1["angles"]
+        ],
     }
 
 
@@ -1141,7 +1302,10 @@ def _slim_checklist(cl: dict | None) -> dict | None:
         "main_object": inner["main_object"],
         "main_object_correct_a": verify_a.get("main_object_correct"),
         "main_object_correct_b": verify_b.get("main_object_correct"),
-        "features": [{"feature": d, "side_a": checks_a.get(d), "side_b": checks_b.get(d)} for d in feature_descs],
+        "features": [
+            {"feature": d, "side_a": checks_a.get(d), "side_b": checks_b.get(d)}
+            for d in feature_descs
+        ],
         "score_a": cl.get("score_a"),
         "score_b": cl.get("score_b"),
     }
@@ -1165,7 +1329,10 @@ def _slim_s4(s4: dict) -> dict:
     return {
         "choice": s4["choice"],
         "side_verdicts": s4["side_verdicts"],
-        "per_angle": {side: {a["label"]: a["verdict"] for a in s4["per_angle"][side]} for side in ("a", "b")},
+        "per_angle": {
+            side: {a["label"]: a["verdict"] for a in s4["per_angle"][side]}
+            for side in ("a", "b")
+        },
     }
 
 
@@ -1196,7 +1363,11 @@ async def evaluate_duel(
     if not right_views:
         return "left", {"reason": "no preview from right"}
 
-    explain_task = asyncio.create_task(_explain_run(vlm, prompt_url, _grid_url(left_views), _grid_url(right_views), seed))
+    explain_task = asyncio.create_task(
+        _explain_run(
+            vlm, prompt_url, _grid_url(left_views), _grid_url(right_views), seed
+        )
+    )
 
     s1 = await _s1_run(vlm, sem, prompt_url, left_views, right_views, seed)
     s1_choice, s1_reason = _s1_aggregate(s1)
@@ -1211,8 +1382,12 @@ async def evaluate_duel(
         return CHOICE_TO_WINNER[s1_choice], detail
 
     async def _bv_with_embeddings() -> dict | None:
-        left_embeds, right_embeds = await asyncio.gather(_load_embeddings(http, left_views), _load_embeddings(http, right_views))
-        return await _s2bv_run(vlm, prompt_url, left_views, right_views, left_embeds, right_embeds, seed)
+        left_embeds, right_embeds = await asyncio.gather(
+            _load_embeddings(http, left_views), _load_embeddings(http, right_views)
+        )
+        return await _s2bv_run(
+            vlm, prompt_url, left_views, right_views, left_embeds, right_embeds, seed
+        )
 
     bv, ac, cl = await asyncio.gather(
         _bv_with_embeddings(),
@@ -1226,14 +1401,26 @@ async def evaluate_duel(
 
     if strong_choice is not None:
         detail["s2"] = _slim_s2(bv, ac, cl, choice=strong_choice, source="strong_voter")
-        detail["s2"]["votes"] = {"best_view": bv_vote, "artifact_compare": ac_vote, "checklist": cl_vote}
+        detail["s2"]["votes"] = {
+            "best_view": bv_vote,
+            "artifact_compare": ac_vote,
+            "checklist": cl_vote,
+        }
         detail["s2"]["strong_tag"] = strong_tag
         primary = strong_choice
         decided_by = f"S2 strong_voter [{strong_tag}]"
     else:
-        consensus_choice, counts = _s2_consensus([bv_vote, ac_vote, cl_vote], S2_MIN_CONSENSUS)
-        detail["s2"] = _slim_s2(bv, ac, cl, choice=consensus_choice, source="consensus_3")
-        detail["s2"]["votes"] = {"best_view": bv_vote, "artifact_compare": ac_vote, "checklist": cl_vote}
+        consensus_choice, counts = _s2_consensus(
+            [bv_vote, ac_vote, cl_vote], S2_MIN_CONSENSUS
+        )
+        detail["s2"] = _slim_s2(
+            bv, ac, cl, choice=consensus_choice, source="consensus_3"
+        )
+        detail["s2"]["votes"] = {
+            "best_view": bv_vote,
+            "artifact_compare": ac_vote,
+            "checklist": cl_vote,
+        }
         detail["s2"]["vote_counts"] = counts
         if consensus_choice != "draw":
             primary = consensus_choice
@@ -1244,7 +1431,11 @@ async def evaluate_duel(
             detail["s3"] = _slim_s3(s3)
             emit("S3", detail["s3"])
             primary = s3.get("choice") or "draw"
-            decided_by = "S3 gray-rescue" if s3.get("choice") else "S3 (gate did not fire) -> draw"
+            decided_by = (
+                "S3 gray-rescue"
+                if s3.get("choice")
+                else "S3 (gate did not fire) -> draw"
+            )
     if "s3" not in detail:
         emit("S2", detail["s2"])
 
@@ -1252,10 +1443,14 @@ async def evaluate_duel(
     detail["s4"] = _slim_s4(s4)
     emit("S4", detail["s4"])
     final = s4["choice"]
-    detail["decided_by"] = f"S4 step-down (was {primary})" if s4.get("applied", False) else decided_by
+    detail["decided_by"] = (
+        f"S4 step-down (was {primary})" if s4.get("applied", False) else decided_by
+    )
     detail["issues"] = await explain_task
     detail["elapsed_seconds"] = round(asyncio.get_running_loop().time() - duel_start, 1)
-    logger.info(f"{log_id}: winner={CHOICE_TO_WINNER[final]} (decided by {detail['decided_by']})")
+    logger.info(
+        f"{log_id}: winner={CHOICE_TO_WINNER[final]} (decided by {detail['decided_by']})"
+    )
     return CHOICE_TO_WINNER[final], detail
 
 
@@ -1279,13 +1474,16 @@ class Judge:
         self._concurrency = concurrency
         self._echo = echo or (lambda msg: None)
 
-    async def judge(self, prompts_json: Path, image_dir_1: Path, image_dir_2: Path) -> None:
+    async def judge(
+        self, prompts_json: Path, image_dir_1: Path, image_dir_2: Path
+    ) -> None:
         prompts = self._load_prompts(prompts_json)
         sem = asyncio.Semaphore(self._concurrency)
         vlm_sem = asyncio.Semaphore(32)
         timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
 
         async with httpx.AsyncClient(timeout=timeout) as http:
+
             async def process_prompt(prompt: dict[str, str]) -> dict:
                 async with sem:
                     stem = prompt["stem"]
@@ -1294,7 +1492,9 @@ class Judge:
                     right_views = self._views_dir(image_dir_2, stem)
 
                     def emit(stage: str, detail: dict) -> None:
-                        self._echo(f"{stem} {stage}: {json.dumps(detail, ensure_ascii=False, sort_keys=True)}")
+                        self._echo(
+                            f"{stem} {stage}: {json.dumps(detail, ensure_ascii=False, sort_keys=True)}"
+                        )
 
                     winner, detail = await evaluate_duel(
                         self._client,
@@ -1307,15 +1507,24 @@ class Judge:
                         log_id=stem,
                         stage_callback=emit,
                     )
-                    record = {"stem": stem, "prompt_url": prompt["image_url"], "winner": winner, "detail": detail}
+                    record = {
+                        "stem": stem,
+                        "prompt_url": prompt["image_url"],
+                        "winner": winner,
+                        "detail": detail,
+                    }
                     (self._output_dir / f"{stem}.json").write_text(
                         json.dumps(record, indent=2, ensure_ascii=False),
                         encoding="utf-8",
                     )
-                    self._echo(f"{stem} final: winner={winner} decided_by={detail.get('decided_by')}")
+                    self._echo(
+                        f"{stem} final: winner={winner} decided_by={detail.get('decided_by')}"
+                    )
                     return record
 
-            summary = await asyncio.gather(*(process_prompt(prompt) for prompt in prompts))
+            summary = await asyncio.gather(
+                *(process_prompt(prompt) for prompt in prompts)
+            )
 
         (self._output_dir / "duels.json").write_text(
             json.dumps({"results": summary}, indent=2, ensure_ascii=False),
@@ -1334,7 +1543,9 @@ class Judge:
             image_url = item.get("image_url")
             stem = item.get("stem")
             if not isinstance(image_url, str) or not image_url.strip():
-                raise RuntimeError(f"prompts[{idx}].image_url must be a non-empty string")
+                raise RuntimeError(
+                    f"prompts[{idx}].image_url must be a non-empty string"
+                )
             if not isinstance(stem, str) or not stem.strip():
                 stem = Path(image_url.split("?")[0]).stem
             normalized.append({"stem": stem.strip(), "image_url": image_url.strip()})
