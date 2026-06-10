@@ -5,9 +5,9 @@ description = "Command line tool for the 404 subnet to submit miner solutions"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "loguru==0.7.3",
-    "bittensor==9.12.2",
-    "async-substrate-interface<2",
-    "bittensor-wallet==4.0.1",
+    "bittensor==10.4.0",
+    "async-substrate-interface>=2.0.4,<3",
+    "bittensor-wallet==4.1.0",
     "click==8.3.1",
     "pydantic==2.12.4",
     "pydantic-settings==2.12.0",
@@ -15,7 +15,7 @@ dependencies = [
     "httpx==0.28.1",
     "numpy==2.3.4",
     "openai==2.6.1",
-    "requests==2.32.5",
+    "requests==2.34.2",
 ]
 
 [project.scripts]
